@@ -18,6 +18,7 @@
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
             const response = await fetch(url);
             const text = await response.text();
+            // Xóa dấu ngoặc kép để ID không bị hiểu lầm là văn bản có ngoặc
             return FamilyTree.csv.parse(text.replace(/"/g, ""));
         }
 
@@ -29,43 +30,34 @@
                 ]);
 
                 const finalData = [];
-                const partnerMap = {};
 
-                // 1. Tạo bản đồ vợ chồng
-                dataSpouses.forEach(s => {
-                    const hId = String(s.pid || "").trim();
-                    const wId = String(s.id || "").trim();
-                    if (hId && wId) {
-                        partnerMap[hId] = wId;
-                        partnerMap[wId] = hId;
-                    }
-                });
-
-                // 2. Xử lý dòng chính (Nam)
+                // 1. Xử lý tất cả thành viên dòng chính (Nam) từ sheet Data
                 dataMain.forEach(p => {
                     const id = String(p.id).trim();
-                    if (!id || id === "id") return;
+                    if (!id || id.toLowerCase() === "id") return;
                     
                     const fid = String(p.fid || "").trim();
-                    const mid = partnerMap[fid] || ""; // Tìm mẹ dựa trên cha
+                    const mid = String(p.mid || "").trim();
 
                     finalData.push({
                         id: id,
                         name: p.full_name,
-                        // Quan trọng: pids là mảng [Cha, Mẹ] để hiện nhánh con
-                        pids: (fid && mid) ? [fid, mid] : (fid ? [fid] : null),
-                        gender: String(p.gender).toLowerCase().includes('fe') ? 'female' : 'male'
+                        // Nếu có cả cha và mẹ, dùng dấu gạch đứng | để Balkan hiểu là con chung
+                        pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
+                        gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                     });
                 });
 
-                // 3. Thêm các bà vợ vào dữ liệu để hiển thị
+                // 2. Xử lý các bà vợ từ sheet dData để hiện mối quan hệ vợ chồng
                 dataSpouses.forEach(s => {
                     const id = String(s.id).trim();
-                    if (!id || id === "id") return;
+                    const husbandId = String(s.pid).trim();
+                    if (!id || id.toLowerCase() === "id") return;
+
                     finalData.push({
                         id: id,
                         name: s.full_name,
-                        partnerId: String(s.pid).trim(), // Nối trực tiếp với chồng
+                        partnerId: husbandId, // Nối ngang với chồng
                         gender: 'female'
                     });
                 });
@@ -73,12 +65,12 @@
                 var family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
-                    // Cấu hình quan hệ
+                    parentIdSeparator: "|", // Dấu ngăn cách quan trọng để vẽ nhánh con từ cặp vợ chồng
                     partnerIdField: "partnerId",
                     nodes: finalData
                 });
             } catch (e) {
-                console.error(e);
+                console.error("Lỗi vẽ sơ đồ:", e);
             }
         }
         init();
