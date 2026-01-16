@@ -14,11 +14,6 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
-        function cleanId(id) {
-            if (!id) return null;
-            return String(id).replace(/"/g, "").trim();
-        }
-
         function parseCSV(text) {
             const lines = text.split('\n');
             if (lines.length < 2) return [];
@@ -44,66 +39,57 @@
                 const dataMain = parseCSV(await resMain.text());
                 const dataSpouses = parseCSV(await resSpouses.text());
 
-                const finalNodes = [];
-                const partnerMap = {};
+                let nodes = [];
+                const ids = new Set();
 
-                // 1. Lưu thông tin vợ chồng từ dData
+                // 1. Nạp bảng dData (Vợ/Chồng) trước
                 dataSpouses.forEach(s => {
-                    const sid = cleanId(s.id);
-                    const spid = cleanId(s.pid);
-                    if (sid && spid) { partnerMap[spid] = sid; }
+                    if (!s.id) return;
+                    nodes.push({
+                        id: s.id,
+                        pids: s.pid ? [s.pid] : null,
+                        name: s.full_name,
+                        gender: 'female'
+                    });
+                    ids.add(s.id);
                 });
 
-                // 2. Xử lý bảng Data chính
+                // 2. Nạp bảng Data (Dòng chính)
                 dataMain.forEach(p => {
-                    const id = cleanId(p.id);
-                    if (!id) return;
+                    if (!p.id) return;
                     
-                    const fid = cleanId(p.fid);
-                    const mid = cleanId(p.mid) || partnerMap[fid];
-
                     let pids = [];
-                    if (fid) pids.push(fid);
-                    if (mid) pids.push(mid);
+                    if (p.fid) pids.push(p.fid);
+                    if (p.mid) pids.push(p.mid);
 
-                    // Xử lý Gender: nếu trống thì mặc định là 'male'
-                    let genderVal = (p.gender || "").toLowerCase();
-                    let finalGender = 'male'; 
-                    if (genderVal.includes('fe') || genderVal.includes('nữ')) {
-                        finalGender = 'female';
-                    }
-
-                    finalNodes.push({
-                        id: id,
+                    nodes.push({
+                        id: p.id,
                         pids: pids.length > 0 ? pids : null,
-                        name: p.full_name || "Thành viên " + id,
-                        gender: finalGender
+                        name: p.full_name,
+                        gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
                     });
+                    ids.add(p.id);
                 });
 
-                // 3. Xử lý bảng dData (các bà vợ)
-                dataSpouses.forEach(s => {
-                    const id = cleanId(s.id);
-                    if (!id) return;
-                    finalNodes.push({
-                        id: id,
-                        name: s.full_name || "Vợ/Chồng",
-                        partnerId: cleanId(s.pid),
-                        gender: 'female' // Bảng này mặc định là nữ
-                    });
+                // 3. KHỬ LỖI: Nếu con có cha/mẹ (fid/mid) mà ID đó không tồn tại, tạo nút rỗng để nối
+                const ghostNodes = [];
+                nodes.forEach(node => {
+                    if (node.pids) {
+                        node.pids.forEach(parentId => {
+                            if (!ids.has(parentId)) {
+                                ghostNodes.push({ id: parentId, name: "Gốc " + parentId, gender: 'male' });
+                                ids.add(parentId);
+                            }
+                        });
+                    }
                 });
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
-                    enableSearch: true,
-                    // Giúp hệ thống tự tính toán vị trí khi thiếu dữ liệu gender hoặc quan hệ
-                    layout: FamilyTree.mixed, 
-                    nodes: finalNodes
+                    nodes: nodes.concat(ghostNodes)
                 });
-            } catch (e) {
-                console.error("Lỗi vẽ sơ đồ: ", e);
-            }
+            } catch (e) { console.error(e); }
         }
         init();
     </script>
