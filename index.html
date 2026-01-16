@@ -1,15 +1,17 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Live</title>
+    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f0f2f5; }
         #tree { width: 100%; height: 100%; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: sans-serif; z-index: 100; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
+    <div id="loading">Đang khởi tạo gia phả Lê Công...</div>
     <div id="tree"></div>
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
@@ -19,7 +21,6 @@
                 const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
                 const response = await fetch(url);
                 const text = await response.text();
-                // Dùng thư viện Balkan để parse và chuẩn hóa dữ liệu
                 return FamilyTree.csv.parse(text);
             } catch (e) { return []; }
         }
@@ -30,50 +31,60 @@
                 fetchCSV('dData')
             ]);
 
+            const finalData = [];
             const partnerMap = {};
+
+            // Xử lý dData (Vợ/Chồng)
             dataSpouses.forEach(s => {
                 const hId = String(s.pid || s.PID || "").replace(/"/g, "").trim();
                 const wId = String(s.id || s.ID || "").replace(/"/g, "").trim();
-                if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
+                if (hId && wId) {
+                    partnerMap[hId] = wId;
+                    partnerMap[wId] = hId;
+                }
             });
 
-            const finalData = [];
+            // Xử lý Data (Dòng chính)
             dataMain.forEach(p => {
                 const id = String(p.id || p.ID || "").replace(/"/g, "").trim();
-                if (!id || id === "id") return; // Bỏ qua dòng tiêu đề nếu bị lặp
+                if (!id || id.toLowerCase() === "id") return;
 
                 const fid = String(p.fid || p.FID || "").replace(/"/g, "").trim();
                 const mid = partnerMap[fid] || "";
-                const name = p.full_name || p.fullname || "Thành viên " + id;
                 
                 finalData.push({
                     id: id,
-                    name: name,
-                    pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
+                    name: (p.full_name || p.name || "").replace(/"/g, ""),
+                    pids: (fid && mid) ? [fid, mid] : (fid ? [fid] : null),
                     partnerId: partnerMap[id] || null,
                     gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                 });
             });
 
+            // Thêm dData vào danh sách hiển thị
             dataSpouses.forEach(s => {
                 const id = String(s.id || s.ID || "").replace(/"/g, "").trim();
-                if (!id || id === "id") return;
-                const name = s.full_name || s.fullname || "Thành viên " + id;
+                if (!id || id.toLowerCase() === "id") return;
                 finalData.push({
                     id: id,
-                    name: name,
-                    partnerId: String(s.pid || s.PID || "").replace(/"/g, "").trim(),
+                    name: (s.full_name || s.name || "").replace(/"/g, ""),
+                    partnerId: String(s.pid || "").replace(/"/g, "").trim(),
                     gender: 'female'
                 });
             });
 
-            var family = new FamilyTree(document.getElementById("tree"), {
-                template: "tommy",
-                nodeBinding: { field_0: "name" },
-                parentIdSeparator: "|",
-                partnerIdField: "partnerId"
-            });
-            family.load(finalData);
+            if (finalData.length > 0) {
+                document.getElementById('loading').style.display = 'none';
+                var family = new FamilyTree(document.getElementById("tree"), {
+                    template: "tommy",
+                    mouseScrol: FamilyTree.none,
+                    nodeBinding: { field_0: "name" },
+                    partnerIdField: "partnerId",
+                    nodes: finalData
+                });
+            } else {
+                document.getElementById('loading').innerHTML = "Lỗi: Không tìm thấy dữ liệu hợp lệ trong Sheets.";
+            }
         }
         init();
     </script>
