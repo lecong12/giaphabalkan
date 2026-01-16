@@ -14,13 +14,29 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
+        // Hàm dọn dẹp tiêu đề cột: xóa dấu, viết thường, xóa khoảng trắng
+        function cleanKey(key) {
+            return key.toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu Tiếng Việt
+                .replace(/\s+/g, '') // Xóa khoảng trắng
+                .trim();
+        }
+
         async function fetchCSV(sheetName) {
             try {
                 const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
                 const response = await fetch(url);
-                if (!response.ok) return [];
                 const text = await response.text();
-                return FamilyTree.csv.parse(text);
+                const rawData = FamilyTree.csv.parse(text);
+                
+                // Chuẩn hóa toàn bộ key của dữ liệu
+                return rawData.map(row => {
+                    let newRow = {};
+                    for (let key in row) {
+                        newRow[cleanKey(key)] = row[key];
+                    }
+                    return newRow;
+                });
             } catch (e) { return []; }
         }
 
@@ -30,39 +46,44 @@
                 fetchCSV('dData')
             ]);
 
-            if (!dataMain.length) {
-                console.error("Không lấy được dữ liệu. Kiểm tra quyền chia sẻ Sheets.");
-                return;
-            }
-
+            const finalData = [];
             const partnerMap = {};
+
+            // Xử lý bảng vợ chồng
             dataSpouses.forEach(s => {
                 const hId = String(s.pid || "").trim();
                 const wId = String(s.id || "").trim();
-                if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
+                if (hId && wId) {
+                    partnerMap[hId] = wId;
+                    partnerMap[wId] = hId;
+                }
             });
 
-            const finalData = [];
+            // Xử lý bảng người chính (Data)
             dataMain.forEach(p => {
-                if (!p.id) return; // Bỏ qua dòng trống
-                const id = String(p.id).trim();
+                const id = String(p.id || "").trim();
+                if (!id || id === "undefined") return;
+
                 const fid = String(p.fid || "").trim();
                 const mid = partnerMap[fid] || "";
                 
                 finalData.push({
                     id: id,
-                    name: p.full_name || "Chưa rõ tên",
+                    name: p.fullname || p.hovaten || "Không tên",
                     pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
                     partnerId: partnerMap[id] || null,
                     gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                 });
             });
 
+            // Thêm các bà vợ (dData)
             dataSpouses.forEach(s => {
-                if (!s.id) return;
+                const id = String(s.id || "").trim();
+                if (!id || id === "undefined") return;
+                
                 finalData.push({
-                    id: String(s.id).trim(),
-                    name: s.full_name || "Chưa rõ tên",
+                    id: id,
+                    name: s.fullname || s.hovaten || "Không tên",
                     partnerId: String(s.pid || "").trim(),
                     gender: 'female'
                 });
