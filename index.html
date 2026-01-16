@@ -7,16 +7,13 @@
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
-    <div id="loading">Đang tải dữ liệu gia phả...</div>
     <div id="tree"></div>
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
-        // Giữ nguyên hàm parse của V48 vì nó đang hoạt động tốt
         function parseCSV(text) {
             const lines = text.split('\n');
             if (lines.length < 2) return [];
@@ -34,68 +31,33 @@
 
         async function init() {
             try {
-                const [resMain, resSpouses] = await Promise.all([
-                    fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`),
-                    fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=dData`)
-                ]);
+                const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`);
+                const text = await res.text();
+                const rawData = parseCSV(text);
 
-                const dataMain = parseCSV(await resMain.text());
-                const dataSpouses = parseCSV(await resSpouses.text());
-
-                const finalData = [];
-                const partnerMap = {};
-
-                // 1. Tạo bản đồ vợ chồng từ dData
-                dataSpouses.forEach(s => {
-                    if (s.id && s.pid) {
-                        partnerMap[s.pid] = s.id;
-                        partnerMap[s.id] = s.pid;
-                    }
-                });
-
-                // 2. Xử lý dữ liệu chính (Nam)
-                dataMain.forEach(p => {
-                    if (!p.id || p.id === "id") return;
+                const nodes = rawData.map(p => {
+                    if (!p.id) return null;
                     
-                    // Logic kết nối quan hệ quan trọng:
-                    // Balkan cần pids dạng mảng [cha_id, me_id] để vẽ nhánh
+                    // Logic kết nối: Gom cha (fid) và mẹ (mid) lại để vẽ nhánh
                     let pids = [];
                     if (p.fid) pids.push(p.fid);
-                    
-                    // Nếu cột mid của bạn có dữ liệu thì lấy, nếu không thì tìm vợ của cha từ partnerMap
-                    let mid = p.mid || partnerMap[p.fid];
-                    if (mid) pids.push(mid);
+                    if (p.mid) pids.push(p.mid);
 
-                    finalData.push({
+                    return {
                         id: p.id,
                         pids: pids.length > 0 ? pids : null,
                         name: p.full_name || "Thành viên " + p.id,
                         gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
-                    });
-                });
+                    };
+                }).filter(n => n !== null);
 
-                // 3. Thêm các thành viên từ dData (Vợ/Chồng) vào sơ đồ
-                dataSpouses.forEach(s => {
-                    if (!s.id || s.id === "id") return;
-                    finalData.push({
-                        id: s.id,
-                        name: s.full_name,
-                        partnerId: s.pid, // Nối ngang với chồng
-                        gender: 'female'
-                    });
-                });
-
-                document.getElementById('loading').style.display = 'none';
-
-                // Khởi tạo sơ đồ với cấu hình vẽ quan hệ
                 new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
-                    nodes: finalData
+                    nodes: nodes
                 });
-
             } catch (e) {
-                document.getElementById('loading').innerHTML = "Lỗi: " + e.message;
+                console.error(e);
             }
         }
         init();
