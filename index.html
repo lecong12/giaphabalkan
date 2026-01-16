@@ -76,8 +76,7 @@
                 });
 
                 // 3. Xử lý các bà vợ
-                dataSpouses.forEach(s => {
-                    const id = cleanId(s.id);
+                dataSpouses.forEach(s => {const id = cleanId(s.id);
                     if (!id) return;
                     finalNodes.push({
                         id: id,
