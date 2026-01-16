@@ -14,17 +14,15 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
+        function clean(val) { return val ? String(val).replace(/"/g, "").trim() : ""; }
+
         function parseCSV(text) {
             const lines = text.split('\n');
-            if (lines.length < 2) return [];
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+            const headers = lines[0].split(',').map(h => clean(h).toLowerCase());
             return lines.slice(1).map(line => {
                 const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
                 let obj = {};
-                headers.forEach((header, i) => {
-                    let val = values[i] || "";
-                    obj[header] = val.replace(/^"|"$/g, '').trim();
-                });
+                headers.forEach((header, i) => { obj[header] = clean(values[i]); });
                 return obj;
             });
         }
@@ -40,55 +38,52 @@
                 const dataSpouses = parseCSV(await resSpouses.text());
 
                 let nodes = [];
-                const ids = new Set();
+                let registeredIds = new Set();
 
-                // 1. Nạp bảng dData (Vợ/Chồng) trước
+                // 1. Nạp tất cả ID hiện có
+                dataMain.forEach(p => registeredIds.add(p.id));
+                dataSpouses.forEach(s => registeredIds.add(s.id));
+
+                // 2. Xử lý thành viên chính
+                dataMain.forEach(p => {
+                    if (!p.id) return;
+                    let node = {
+                        id: p.id,
+                        name: p.full_name,
+                        gender: (p.gender.toLowerCase().includes('fe') || p.gender.toLowerCase().includes('nữ')) ? 'female' : 'male'
+                    };
+                    // Chỉ nối nếu cha/mẹ có tồn tại trong danh sách ID
+                    let pids = [];
+                    if (p.fid && registeredIds.has(p.fid)) pids.push(p.fid);
+                    if (p.mid && registeredIds.has(p.mid)) pids.push(p.mid);
+                    if (pids.length > 0) node.pids = pids;
+                    
+                    nodes.push(node);
+                });
+
+                // 3. Xử lý vợ chồng
                 dataSpouses.forEach(s => {
                     if (!s.id) return;
                     nodes.push({
                         id: s.id,
-                        pids: s.pid ? [s.pid] : null,
                         name: s.full_name,
+                        partnerId: registeredIds.has(s.pid) ? s.pid : null,
                         gender: 'female'
                     });
-                    ids.add(s.id);
-                });
-
-                // 2. Nạp bảng Data (Dòng chính)
-                dataMain.forEach(p => {
-                    if (!p.id) return;
-                    
-                    let pids = [];
-                    if (p.fid) pids.push(p.fid);
-                    if (p.mid) pids.push(p.mid);
-
-                    nodes.push({
-                        id: p.id,
-                        pids: pids.length > 0 ? pids : null,
-                        name: p.full_name,
-                        gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
-                    });
-                    ids.add(p.id);
-                });
-
-                // 3. KHỬ LỖI: Nếu con có cha/mẹ (fid/mid) mà ID đó không tồn tại, tạo nút rỗng để nối
-                const ghostNodes = [];
-                nodes.forEach(node => {
-                    if (node.pids) {
-                        node.pids.forEach(parentId => {
-                            if (!ids.has(parentId)) {
-                                ghostNodes.push({ id: parentId, name: "Gốc " + parentId, gender: 'male' });
-                                ids.add(parentId);
-                            }
-                        });
-                    }
                 });
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
-                    nodes: nodes.concat(ghostNodes)
+                    enableSearch: true,
+                    // Ép sơ đồ vẽ theo kiểu cây dọc (từ tổ tiên xuống)
+                    layout: FamilyTree.mixed,
+                    nodes: nodes
                 });
+
+                // Nếu có cụ Mao (ID 1), tự động tập trung vào cụ để hiện cây
+                if (registeredIds.has("1")) family.fit();
+
             } catch (e) { console.error(e); }
         }
         init();
