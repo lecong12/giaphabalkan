@@ -5,7 +5,7 @@
     <title>Gia Phả Lê Công - Live</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #ffffff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f0f2f5; }
         #tree { width: 100%; height: 100%; }
     </style>
 </head>
@@ -19,6 +19,7 @@
                 const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
                 const response = await fetch(url);
                 const text = await response.text();
+                // Dùng thư viện Balkan để parse và chuẩn hóa dữ liệu
                 return FamilyTree.csv.parse(text);
             } catch (e) { return []; }
         }
@@ -31,21 +32,19 @@
 
             const partnerMap = {};
             dataSpouses.forEach(s => {
-                const hId = String(s.pid || s.PID || "").trim();
-                const wId = String(s.id || s.ID || "").trim();
+                const hId = String(s.pid || s.PID || "").replace(/"/g, "").trim();
+                const wId = String(s.id || s.ID || "").replace(/"/g, "").trim();
                 if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
             });
 
             const finalData = [];
             dataMain.forEach(p => {
-                const id = String(p.id || p.ID || "").trim();
-                if (!id || id === "undefined" || id === "") return;
+                const id = String(p.id || p.ID || "").replace(/"/g, "").trim();
+                if (!id || id === "id") return; // Bỏ qua dòng tiêu đề nếu bị lặp
 
-                const fid = String(p.fid || p.FID || "").trim();
+                const fid = String(p.fid || p.FID || "").replace(/"/g, "").trim();
                 const mid = partnerMap[fid] || "";
-                
-                // Tự động tìm cột tên (chấp nhận full_name, name, hoặc fullname)
-                const name = p.full_name || p.name || p.fullname || "Thành viên " + id;
+                const name = p.full_name || p.fullname || "Thành viên " + id;
                 
                 finalData.push({
                     id: id,
@@ -57,21 +56,16 @@
             });
 
             dataSpouses.forEach(s => {
-                const id = String(s.id || s.ID || "").trim();
-                if (!id || id === "") return;
-                const name = s.full_name || s.name || s.fullname || "Thành viên " + id;
+                const id = String(s.id || s.ID || "").replace(/"/g, "").trim();
+                if (!id || id === "id") return;
+                const name = s.full_name || s.fullname || "Thành viên " + id;
                 finalData.push({
                     id: id,
                     name: name,
-                    partnerId: String(s.pid || s.PID || "").trim(),
+                    partnerId: String(s.pid || s.PID || "").replace(/"/g, "").trim(),
                     gender: 'female'
                 });
             });
-
-            if (finalData.length === 0) {
-                console.error("Dữ liệu trống!");
-                return;
-            }
 
             var family = new FamilyTree(document.getElementById("tree"), {
                 template: "tommy",
