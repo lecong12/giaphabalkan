@@ -7,9 +7,11 @@
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
+        #error-log { position: fixed; top: 10px; left: 10px; color: red; background: white; z-index: 1000; font-size: 12px; }
     </style>
 </head>
 <body>
+    <div id="error-log"></div>
     <div id="tree"></div>
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
@@ -18,7 +20,7 @@
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
             const response = await fetch(url);
             const text = await response.text();
-            // Xóa dấu ngoặc kép để ID không bị hiểu lầm là văn bản có ngoặc
+            // Xử lý dấu ngoặc kép của Google Sheets
             return FamilyTree.csv.parse(text.replace(/"/g, ""));
         }
 
@@ -29,48 +31,63 @@
                     fetchCSV('dData')
                 ]);
 
-                const finalData = [];
+                if (!dataMain || dataMain.length === 0) {
+                    document.getElementById('error-log').innerText = "Không tìm thấy dữ liệu trong sheet Data.";
+                    return;
+                }
 
-                // 1. Xử lý tất cả thành viên dòng chính (Nam) từ sheet Data
+                const finalData = [];
+                const partnerMap = {};
+
+                // 1. Lưu danh sách vợ chồng vào bộ nhớ tạm
+                dataSpouses.forEach(s => {
+                    const wId = String(s.id || "").trim();
+                    const hId = String(s.pid || "").trim();
+                    if (wId && hId) {
+                        partnerMap[hId] = wId;
+                        partnerMap[wId] = hId;
+                    }
+                });
+
+                // 2. Xử lý thành viên dòng chính (Nam)
                 dataMain.forEach(p => {
-                    const id = String(p.id).trim();
+                    const id = String(p.id || "").trim();
                     if (!id || id.toLowerCase() === "id") return;
                     
                     const fid = String(p.fid || "").trim();
-                    const mid = String(p.mid || "").trim();
+                    // Lấy mid trực tiếp từ cột của bạn hoặc tìm từ partnerMap
+                    const mid = String(p.mid || "").trim() || partnerMap[fid] || "";
 
                     finalData.push({
                         id: id,
-                        name: p.full_name,
-                        // Nếu có cả cha và mẹ, dùng dấu gạch đứng | để Balkan hiểu là con chung
-                        pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
+                        name: p.full_name || "Chưa rõ tên",
+                        pids: (fid && mid) ? [fid, mid] : (fid ? [fid] : null),
                         gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                     });
                 });
 
-                // 2. Xử lý các bà vợ từ sheet dData để hiện mối quan hệ vợ chồng
+                // 3. Xử lý các bà vợ để hiển thị mối quan hệ ngang
                 dataSpouses.forEach(s => {
-                    const id = String(s.id).trim();
-                    const husbandId = String(s.pid).trim();
+                    const id = String(s.id || "").trim();
                     if (!id || id.toLowerCase() === "id") return;
-
                     finalData.push({
                         id: id,
-                        name: s.full_name,
-                        partnerId: husbandId, // Nối ngang với chồng
+                        name: s.full_name || "Vợ/Chồng",
+                        partnerId: String(s.pid || "").trim(),
                         gender: 'female'
                     });
                 });
 
-                var family = new FamilyTree(document.getElementById("tree"), {
+                // Khởi tạo sơ đồ
+                new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
-                    parentIdSeparator: "|", // Dấu ngăn cách quan trọng để vẽ nhánh con từ cặp vợ chồng
                     partnerIdField: "partnerId",
                     nodes: finalData
                 });
-            } catch (e) {
-                console.error("Lỗi vẽ sơ đồ:", e);
+
+            } catch (err) {
+                document.getElementById('error-log').innerText = "Lỗi hệ thống: " + err.message;
             }
         }
         init();
