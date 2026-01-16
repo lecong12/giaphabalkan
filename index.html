@@ -14,7 +14,6 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
-        // Hàm dọn dẹp ID cực sạch
         function cleanId(id) {
             if (!id) return null;
             return String(id).replace(/"/g, "").trim();
@@ -48,14 +47,14 @@
                 const finalNodes = [];
                 const partnerMap = {};
 
-                // 1. Map vợ chồng để tìm mid tự động nếu thiếu
+                // 1. Lưu thông tin vợ chồng từ dData
                 dataSpouses.forEach(s => {
                     const sid = cleanId(s.id);
                     const spid = cleanId(s.pid);
                     if (sid && spid) { partnerMap[spid] = sid; }
                 });
 
-                // 2. Xử lý dòng chính
+                // 2. Xử lý bảng Data chính
                 dataMain.forEach(p => {
                     const id = cleanId(p.id);
                     if (!id) return;
@@ -67,33 +66,43 @@
                     if (fid) pids.push(fid);
                     if (mid) pids.push(mid);
 
+                    // Xử lý Gender: nếu trống thì mặc định là 'male'
+                    let genderVal = (p.gender || "").toLowerCase();
+                    let finalGender = 'male'; 
+                    if (genderVal.includes('fe') || genderVal.includes('nữ')) {
+                        finalGender = 'female';
+                    }
+
                     finalNodes.push({
                         id: id,
                         pids: pids.length > 0 ? pids : null,
-                        name: p.full_name,
-                        gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
+                        name: p.full_name || "Thành viên " + id,
+                        gender: finalGender
                     });
                 });
 
-                // 3. Xử lý các bà vợ
-                dataSpouses.forEach(s => {const id = cleanId(s.id);
+                // 3. Xử lý bảng dData (các bà vợ)
+                dataSpouses.forEach(s => {
+                    const id = cleanId(s.id);
                     if (!id) return;
                     finalNodes.push({
                         id: id,
-                        name: s.full_name,
+                        name: s.full_name || "Vợ/Chồng",
                         partnerId: cleanId(s.pid),
-                        gender: 'female'
+                        gender: 'female' // Bảng này mặc định là nữ
                     });
                 });
 
-                new FamilyTree(document.getElementById("tree"), {
+                const family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
                     enableSearch: true,
+                    // Giúp hệ thống tự tính toán vị trí khi thiếu dữ liệu gender hoặc quan hệ
+                    layout: FamilyTree.mixed, 
                     nodes: finalNodes
                 });
             } catch (e) {
-                console.error(e);
+                console.error("Lỗi vẽ sơ đồ: ", e);
             }
         }
         init();
