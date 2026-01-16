@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <title>Gia Phả Lê Công</title>
-    <script src="https://balkan.app/js/FamilyTree.js"></script>
+    <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
-        #error-log { position: fixed; top: 10px; left: 10px; color: red; background: white; z-index: 1000; font-size: 12px; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: sans-serif; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; }
     </style>
 </head>
 <body>
-    <div id="error-log"></div>
+    <div id="loading">Đang tải thư viện và dữ liệu...</div>
     <div id="tree"></div>
+
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
@@ -20,26 +21,28 @@
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
             const response = await fetch(url);
             const text = await response.text();
-            // Xử lý dấu ngoặc kép của Google Sheets
-            return FamilyTree.csv.parse(text.replace(/"/g, ""));
+            // Xử lý dấu ngoặc kép và ký tự ẩn từ Google Sheets
+            const cleanText = text.replace(/"/g, "");
+            return FamilyTree.csv.parse(cleanText);
         }
 
         async function init() {
+            // Kiểm tra xem thư viện đã sẵn sàng chưa
+            if (typeof FamilyTree === 'undefined') {
+                setTimeout(init, 500); // Thử lại sau 0.5 giây nếu chưa tải xong
+                return;
+            }
+
             try {
                 const [dataMain, dataSpouses] = await Promise.all([
                     fetchCSV('Data'),
                     fetchCSV('dData')
                 ]);
 
-                if (!dataMain || dataMain.length === 0) {
-                    document.getElementById('error-log').innerText = "Không tìm thấy dữ liệu trong sheet Data.";
-                    return;
-                }
-
                 const finalData = [];
                 const partnerMap = {};
 
-                // 1. Lưu danh sách vợ chồng vào bộ nhớ tạm
+                // 1. Map vợ chồng
                 dataSpouses.forEach(s => {
                     const wId = String(s.id || "").trim();
                     const hId = String(s.pid || "").trim();
@@ -49,24 +52,24 @@
                     }
                 });
 
-                // 2. Xử lý thành viên dòng chính (Nam)
+                // 2. Xử lý dòng chính
                 dataMain.forEach(p => {
                     const id = String(p.id || "").trim();
                     if (!id || id.toLowerCase() === "id") return;
                     
                     const fid = String(p.fid || "").trim();
-                    // Lấy mid trực tiếp từ cột của bạn hoặc tìm từ partnerMap
                     const mid = String(p.mid || "").trim() || partnerMap[fid] || "";
 
                     finalData.push({
                         id: id,
-                        name: p.full_name || "Chưa rõ tên",
+                        name: p.full_name || "Thành viên " + id,
+                        // Quan trọng: Sử dụng pids dạng mảng để Balkan tự vẽ nhánh từ cặp cha mẹ
                         pids: (fid && mid) ? [fid, mid] : (fid ? [fid] : null),
                         gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                     });
                 });
 
-                // 3. Xử lý các bà vợ để hiển thị mối quan hệ ngang
+                // 3. Thêm các bà vợ
                 dataSpouses.forEach(s => {
                     const id = String(s.id || "").trim();
                     if (!id || id.toLowerCase() === "id") return;
@@ -78,8 +81,9 @@
                     });
                 });
 
-                // Khởi tạo sơ đồ
-                new FamilyTree(document.getElementById("tree"), {
+                document.getElementById('loading').style.display = 'none';
+
+                var family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
                     partnerIdField: "partnerId",
@@ -87,10 +91,12 @@
                 });
 
             } catch (err) {
-                document.getElementById('error-log').innerText = "Lỗi hệ thống: " + err.message;
+                document.getElementById('loading').innerHTML = "Lỗi tải dữ liệu: " + err.message;
             }
         }
-        init();
+
+        // Chạy khi trang đã tải xong
+        window.onload = init;
     </script>
 </body>
 </html>
