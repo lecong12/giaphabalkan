@@ -5,7 +5,7 @@
     <title>Gia Phả Lê Công - Live</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #2E2E2E; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #ffffff; }
         #tree { width: 100%; height: 100%; }
     </style>
 </head>
@@ -14,29 +14,12 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
-        // Hàm dọn dẹp tiêu đề cột: xóa dấu, viết thường, xóa khoảng trắng
-        function cleanKey(key) {
-            return key.toLowerCase()
-                .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu Tiếng Việt
-                .replace(/\s+/g, '') // Xóa khoảng trắng
-                .trim();
-        }
-
         async function fetchCSV(sheetName) {
             try {
                 const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
                 const response = await fetch(url);
                 const text = await response.text();
-                const rawData = FamilyTree.csv.parse(text);
-                
-                // Chuẩn hóa toàn bộ key của dữ liệu
-                return rawData.map(row => {
-                    let newRow = {};
-                    for (let key in row) {
-                        newRow[cleanKey(key)] = row[key];
-                    }
-                    return newRow;
-                });
+                return FamilyTree.csv.parse(text);
             } catch (e) { return []; }
         }
 
@@ -46,48 +29,49 @@
                 fetchCSV('dData')
             ]);
 
-            const finalData = [];
             const partnerMap = {};
-
-            // Xử lý bảng vợ chồng
             dataSpouses.forEach(s => {
-                const hId = String(s.pid || "").trim();
-                const wId = String(s.id || "").trim();
-                if (hId && wId) {
-                    partnerMap[hId] = wId;
-                    partnerMap[wId] = hId;
-                }
+                const hId = String(s.pid || s.PID || "").trim();
+                const wId = String(s.id || s.ID || "").trim();
+                if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
             });
 
-            // Xử lý bảng người chính (Data)
+            const finalData = [];
             dataMain.forEach(p => {
-                const id = String(p.id || "").trim();
-                if (!id || id === "undefined") return;
+                const id = String(p.id || p.ID || "").trim();
+                if (!id || id === "undefined" || id === "") return;
 
-                const fid = String(p.fid || "").trim();
+                const fid = String(p.fid || p.FID || "").trim();
                 const mid = partnerMap[fid] || "";
+                
+                // Tự động tìm cột tên (chấp nhận full_name, name, hoặc fullname)
+                const name = p.full_name || p.name || p.fullname || "Thành viên " + id;
                 
                 finalData.push({
                     id: id,
-                    name: p.fullname || p.hovaten || "Không tên",
+                    name: name,
                     pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
                     partnerId: partnerMap[id] || null,
                     gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                 });
             });
 
-            // Thêm các bà vợ (dData)
             dataSpouses.forEach(s => {
-                const id = String(s.id || "").trim();
-                if (!id || id === "undefined") return;
-                
+                const id = String(s.id || s.ID || "").trim();
+                if (!id || id === "") return;
+                const name = s.full_name || s.name || s.fullname || "Thành viên " + id;
                 finalData.push({
                     id: id,
-                    name: s.fullname || s.hovaten || "Không tên",
-                    partnerId: String(s.pid || "").trim(),
+                    name: name,
+                    partnerId: String(s.pid || s.PID || "").trim(),
                     gender: 'female'
                 });
             });
+
+            if (finalData.length === 0) {
+                console.error("Dữ liệu trống!");
+                return;
+            }
 
             var family = new FamilyTree(document.getElementById("tree"), {
                 template: "tommy",
