@@ -2,16 +2,16 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
+    <title>Gia Phả Lê Công</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 100; background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 4px; font-family: sans-serif; font-size: 12px; }
+        #loading { position: fixed; top: 20px; left: 20px; z-index: 100; background: white; padding: 10px; border: 1px solid #ccc; font-family: sans-serif; }
     </style>
 </head>
 <body>
-    <div id="status">Đang tải dữ liệu...</div>
+    <div id="loading">Đang quét dữ liệu từ Google Sheets...</div>
     <div id="tree"></div>
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
@@ -21,7 +21,9 @@
                 const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
                 const response = await fetch(url);
                 const text = await response.text();
-                return FamilyTree.csv.parse(text);
+                // Tự động dọn dẹp các dấu ngoặc kép thừa từ Google CSV
+                const cleanText = text.replace(/"/g, ""); 
+                return FamilyTree.csv.parse(cleanText);
             } catch (e) { return []; }
         }
 
@@ -34,53 +36,54 @@
             const finalData = [];
             const partnerMap = {};
 
-            // 1. Xử lý Vợ/Chồng từ sheet dData
+            // Xử lý dData
             dataSpouses.forEach(s => {
-                const hId = String(s.pid || "").trim();
-                const wId = String(s.id || "").trim();
-                if (hId && wId) {
-                    partnerMap[hId] = wId;
-                    partnerMap[wId] = hId;
-                }
+                const hId = (s.pid || s.PID || s[Object.keys(s)[2]] || "").toString().trim();
+                const wId = (s.id || s.ID || s[Object.keys(s)[0]] || "").toString().trim();
+                if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
             });
 
-            // 2. Xử lý Dòng chính từ sheet Data
+            // Xử lý Data chính
             dataMain.forEach(p => {
-                const id = String(p.id || "").trim();
-                if (!id || id === "id") return;
+                const keys = Object.keys(p);
+                // Tự động nhận diện cột dựa trên vị trí nếu tên bị lỗi
+                const id = (p.id || p[keys[0]] || "").toString().trim();
+                if (!id || id.toLowerCase() === "id") return;
 
-                const fid = String(p.fid || "").trim();
-                // Tìm ID mẹ từ bảng partnerMap dựa trên ID cha
+                const name = p.full_name || p.fullname || p[keys[1]] || "Thành viên " + id;
+                const fid = (p.fid || p[keys[2]] || "").toString().trim();
                 const mid = partnerMap[fid] || "";
-                
+                const gender = (p.gender || p[keys[3]] || "").toString().toLowerCase().includes('fe') ? 'female' : 'male';
+
                 finalData.push({
                     id: id,
-                    name: p.full_name || "Thành viên " + id,
+                    name: name,
                     pids: (fid && mid) ? [fid, mid] : (fid ? [fid] : null),
-                    gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
+                    gender: gender
                 });
             });
 
-            // 3. Thêm các bà vợ vào sơ đồ
+            // Thêm vợ/chồng vào danh sách node
             dataSpouses.forEach(s => {
-                const id = String(s.id || "").trim();
-                if (!id) return;
+                const keys = Object.keys(s);
+                const id = (s.id || s[keys[0]] || "").toString().trim();
+                if (!id || id.toLowerCase() === "id") return;
                 finalData.push({
                     id: id,
-                    name: s.full_name || "Vợ/Chồng " + id,
+                    name: s.full_name || s.fullname || s[keys[1]] || "Thành viên " + id,
                     gender: 'female'
                 });
             });
 
             if (finalData.length > 0) {
-                document.getElementById('status').innerText = `Đã tải ${finalData.length} thành viên.`;
+                document.getElementById('loading').style.display = 'none';
                 var family = new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
                     nodes: finalData
                 });
             } else {
-                document.getElementById('status').innerText = "Không tìm thấy dữ liệu. Hãy kiểm tra tên cột trong Sheets.";
+                document.getElementById('loading').innerText = "Vẫn không tìm thấy dữ liệu. Hãy kiểm tra lại quyền Chia sẻ file Sheets.";
             }
         }
         init();
