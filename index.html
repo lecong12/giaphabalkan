@@ -5,7 +5,7 @@
     <title>Gia Phả Lê Công - Live</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #2E2E2E; }
         #tree { width: 100%; height: 100%; }
     </style>
 </head>
@@ -15,62 +15,66 @@
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
         async function fetchCSV(sheetName) {
-            const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
-            const response = await fetch(url);
-            const text = await response.text();
-            return FamilyTree.csv.parse(text);
+            try {
+                const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
+                const response = await fetch(url);
+                if (!response.ok) return [];
+                const text = await response.text();
+                return FamilyTree.csv.parse(text);
+            } catch (e) { return []; }
         }
 
         async function init() {
-            try {
-                const [dataMain, dataSpouses] = await Promise.all([
-                    fetchCSV('Data'),
-                    fetchCSV('dData')
-                ]);
+            const [dataMain, dataSpouses] = await Promise.all([
+                fetchCSV('Data'),
+                fetchCSV('dData')
+            ]);
 
-                const partnerMap = {};
-                dataSpouses.forEach(s => {
-                    const husbandId = String(s.pid).trim();
-                    const wifeId = String(s.id).trim();
-                    if (husbandId && wifeId) {
-                        partnerMap[husbandId] = wifeId;
-                        partnerMap[wifeId] = husbandId;
-                    }
-                });
+            if (!dataMain.length) {
+                console.error("Không lấy được dữ liệu. Kiểm tra quyền chia sẻ Sheets.");
+                return;
+            }
 
-                const finalData = [];
-                // Nhánh Nam
-                dataMain.forEach(p => {
-                    const id = String(p.id).trim();
-                    const fid = String(p.fid || "").trim();
-                    const mid = partnerMap[fid] || "";
-                    finalData.push({
-                        id: id,
-                        name: p.full_name,
-                        pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
-                        partnerId: partnerMap[id] || null,
-                        gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
-                    });
-                });
-                // Nhánh Vợ
-                dataSpouses.forEach(s => {
-                    finalData.push({
-                        id: String(s.id).trim(),
-                        name: s.full_name,
-                        partnerId: String(s.pid).trim(),
-                        gender: 'female'
-                    });
-                });
+            const partnerMap = {};
+            dataSpouses.forEach(s => {
+                const hId = String(s.pid || "").trim();
+                const wId = String(s.id || "").trim();
+                if (hId && wId) { partnerMap[hId] = wId; partnerMap[wId] = hId; }
+            });
 
-                var family = new FamilyTree(document.getElementById("tree"), {
-                    mouseScrol: FamilyTree.none,
-                    template: "tommy",
-                    nodeBinding: { field_0: "name" },
-                    parentIdSeparator: "|",
-                    partnerIdField: "partnerId"
+            const finalData = [];
+            dataMain.forEach(p => {
+                if (!p.id) return; // Bỏ qua dòng trống
+                const id = String(p.id).trim();
+                const fid = String(p.fid || "").trim();
+                const mid = partnerMap[fid] || "";
+                
+                finalData.push({
+                    id: id,
+                    name: p.full_name || "Chưa rõ tên",
+                    pids: (fid && mid) ? `${fid}|${mid}` : (fid ? fid : null),
+                    partnerId: partnerMap[id] || null,
+                    gender: String(p.gender || "").toLowerCase().includes('fe') ? 'female' : 'male'
                 });
-                family.load(finalData);
-            } catch (e) { console.error("Lỗi tải dữ liệu. Hãy kiểm tra quyền chia sẻ Sheets."); }
+            });
+
+            dataSpouses.forEach(s => {
+                if (!s.id) return;
+                finalData.push({
+                    id: String(s.id).trim(),
+                    name: s.full_name || "Chưa rõ tên",
+                    partnerId: String(s.pid || "").trim(),
+                    gender: 'female'
+                });
+            });
+
+            var family = new FamilyTree(document.getElementById("tree"), {
+                template: "tommy",
+                nodeBinding: { field_0: "name" },
+                parentIdSeparator: "|",
+                partnerIdField: "partnerId"
+            });
+            family.load(finalData);
         }
         init();
     </script>
