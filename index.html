@@ -14,7 +14,12 @@
     <script>
         const ssId = '1mX5C3YiDKb-R1Igweo10NsxCtmxIrG2hlCZM5OlPXEw';
 
-        // Hàm đọc CSV ổn định từ bản V48
+        // Hàm dọn dẹp ID cực sạch
+        function cleanId(id) {
+            if (!id) return null;
+            return String(id).replace(/"/g, "").trim();
+        }
+
         function parseCSV(text) {
             const lines = text.split('\n');
             if (lines.length < 2) return [];
@@ -32,7 +37,6 @@
 
         async function init() {
             try {
-                // Đọc đồng thời cả 2 bảng Data và dData
                 const [resMain, resSpouses] = await Promise.all([
                     fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`),
                     fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=dData`)
@@ -42,43 +46,55 @@
                 const dataSpouses = parseCSV(await resSpouses.text());
 
                 const finalNodes = [];
+                const partnerMap = {};
 
-                // 1. Đưa tất cả thành viên từ bảng chính vào
+                // 1. Map vợ chồng để tìm mid tự động nếu thiếu
+                dataSpouses.forEach(s => {
+                    const sid = cleanId(s.id);
+                    const spid = cleanId(s.pid);
+                    if (sid && spid) { partnerMap[spid] = sid; }
+                });
+
+                // 2. Xử lý dòng chính
                 dataMain.forEach(p => {
-                    if (!p.id) return;
+                    const id = cleanId(p.id);
+                    if (!id) return;
                     
-                    // Tạo mối quan hệ cha-mẹ (pids)
-                    let parents = [];
-                    if (p.fid) parents.push(p.fid); // ID của Cha
-                    if (p.mid) parents.push(p.mid); // ID của Mẹ (lấy từ bảng dData)
+                    const fid = cleanId(p.fid);
+                    const mid = cleanId(p.mid) || partnerMap[fid];
+
+                    let pids = [];
+                    if (fid) pids.push(fid);
+                    if (mid) pids.push(mid);
 
                     finalNodes.push({
-                        id: p.id,
-                        pids: parents.length > 0 ? parents : null,
+                        id: id,
+                        pids: pids.length > 0 ? pids : null,
                         name: p.full_name,
                         gender: (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male'
                     });
                 });
 
-                // 2. Đưa tất cả các bà vợ từ bảng dData vào
+                // 3. Xử lý các bà vợ
                 dataSpouses.forEach(s => {
-                    if (!s.id) return;
+                    const id = cleanId(s.id);
+                    if (!id) return;
                     finalNodes.push({
-                        id: s.id,
+                        id: id,
                         name: s.full_name,
-                        partnerId: s.pid, // Kết nối trực tiếp với ID của chồng bên bảng Data
+                        partnerId: cleanId(s.pid),
                         gender: 'female'
                     });
                 });
 
-                // 3. Vẽ sơ đồ
                 new FamilyTree(document.getElementById("tree"), {
                     template: "tommy",
                     nodeBinding: { field_0: "name" },
+                    enableSearch: true,
                     nodes: finalNodes
                 });
             } catch (e) {
-                console.error("Lỗi vẽ cây:", e);
+                console.error(e);
             }
         }
         init();
