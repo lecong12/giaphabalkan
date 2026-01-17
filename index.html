@@ -2,81 +2,71 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
-    <script src="https://balkan.app/js/FamilyTree.js"></script>
+    <title>Gia Phả Lê Công - Bản Không Giới Hạn</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.1.1/css/jquery.orgchart.min.css">
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
-        #tree { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
-        /* Hiệu ứng loading giống Xtea */
-        #loader {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 20px; background: rgba(255,255,255,0.9); border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 10;
-        }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8f9fa; }
+        #chart-container { width: 100%; height: 100%; overflow: auto; text-align: center; }
+        .orgchart { background: transparent; }
+        .orgchart .node .title { background-color: #0066cc; } /* Màu cho nam */
+        .orgchart .node .content { border: 1px solid #0066cc; }
     </style>
 </head>
 <body>
-    <div id="loader">Đang khởi tạo cây gia phả Lê Công...</div>
-    <div id="tree"></div>
+    <div id="chart-container"></div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.1.1/js/jquery.orgchart.min.js"></script>
     <script>
-        // Link Google Sheets mới bạn đã cung cấp
         const SHEET_ID = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
         const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
 
-        // Hàm làm sạch dữ liệu
-        const clean = (v) => v ? v.replace(/"/g, "").trim() : "";
+        async function init() {
+            const res = await fetch(SHEET_URL);
+            const text = await res.text();
+            const lines = text.split('\n');
+            const data = [];
+            
+            // Đọc dữ liệu từ Sheets
+            for(let i=1; i<lines.length; i++) {
+                const cols = lines[i].replace(/"/g, "").split(',');
+                if(cols[0]) {
+                    data.push({
+                        id: cols[0].trim(),
+                        pid: cols[1].trim() === "0" ? null : cols[1].trim(),
+                        name: cols[3].trim()
+                    });
+                }
+            }
 
-        async function drawTree() {
-            try {
-                const response = await fetch(SHEET_URL);
-                const csvText = await response.text();
-                
-                // Tách dòng và xử lý tiêu đề
-                const lines = csvText.split('\n');
-                const headers = lines[0].split(',').map(h => clean(h).toLowerCase());
-                
-                const nodes = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-                    let row = {};
-                    headers.forEach((h, index) => { row[h] = clean(cols[index]); });
-
-                    if (row.id) {
-                        nodes.push({
-                            id: row.id,
-                            fid: (row.fid && row.fid !== "0") ? row.fid : null,
-                            mid: (row.mid && row.mid !== "0") ? row.mid : null,
-                            name: row.full_name || "Thành viên " + row.id,
-                            gender: (row.gender && row.gender.toLowerCase().includes('fe')) ? 'female' : 'male',
-                            address: row.adress || "",
-                            note: row.notes || ""
-                        });
+            // Chuyển danh sách phẳng sang cấu trúc phân cấp (Tree)
+            const listToTree = (data) => {
+                let map = {}, node, roots = [], i;
+                for (i = 0; i < data.length; i++) {
+                    map[data[i].id] = i; 
+                    data[i].children = []; 
+                }
+                for (i = 0; i < data.length; i++) {
+                    node = data[i];
+                    if (node.pid !== null && map[node.pid] !== undefined) {
+                        data[map[node.pid]].children.push(node);
+                    } else {
+                        roots.push(node);
                     }
                 }
+                return roots[0];
+            };
 
-                document.getElementById('loader').style.display = 'none';
+            const datascource = listToTree(data);
 
-                // Khởi tạo Balkan FamilyTree
-                const family = new FamilyTree(document.getElementById("tree"), {
-                    mouseWheel: { zoom: true },
-                    template: "tommy",
-                    nodeBinding: {
-                        field_0: "name",
-                        field_1: "address"
-                    },
-                    enableSearch: true,
-                    layout: FamilyTree.mixed,
-                    nodes: nodes
-                });
-
-            } catch (err) {
-                document.getElementById('loader').innerHTML = "Lỗi tải dữ liệu. Hãy đảm bảo Sheets đã được chia sẻ công khai.";
-            }
+            $('#chart-container').orgchart({
+                'data' : datascource,
+                'nodeContent': 'name',
+                'pan': true,
+                'zoom': true
+            });
         }
-
-        window.onload = drawTree;
+        init();
     </script>
 </body>
 </html>
