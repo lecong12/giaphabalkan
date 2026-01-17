@@ -2,69 +2,81 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Không Giới Hạn</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.1.1/css/jquery.orgchart.min.css">
+    <title>Gia Phả Lê Công - Hệ Thống Vĩnh Viễn</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: Arial, sans-serif; background: #f8f9fa; }
-        #chart-container { width: 100%; height: 100%; overflow: auto; text-align: center; }
-        .orgchart { background: transparent; }
-        .orgchart .node .title { background-color: #0066cc; } /* Màu cho nam */
-        .orgchart .node .content { border: 1px solid #0066cc; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f0f2f5; font-family: sans-serif; }
+        svg { width: 100%; height: 100%; cursor: grab; }
+        .node circle { fill: #fff; stroke: #007bff; stroke-width: 2px; }
+        .node text { font-size: 12px; font-weight: bold; fill: #333; }
+        .link { fill: none; stroke: #ccc; stroke-width: 2px; }
+        #controls { position: fixed; bottom: 20px; left: 20px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
-    <div id="chart-container"></div>
+    <div id="controls">Dùng chuột để kéo, cuộn để phóng to/thu nhỏ</div>
+    <svg id="tree-container"></svg>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/orgchart/3.1.1/js/jquery.orgchart.min.js"></script>
     <script>
         const SHEET_ID = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
         const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
 
         async function init() {
-            const res = await fetch(SHEET_URL);
-            const text = await res.text();
-            const lines = text.split('\n');
-            const data = [];
-            
-            // Đọc dữ liệu từ Sheets
-            for(let i=1; i<lines.length; i++) {
-                const cols = lines[i].replace(/"/g, "").split(',');
-                if(cols[0]) {
-                    data.push({
-                        id: cols[0].trim(),
-                        pid: cols[1].trim() === "0" ? null : cols[1].trim(),
-                        name: cols[3].trim()
-                    });
-                }
+            try {
+                const res = await fetch(SHEET_URL);
+                const text = await res.text();
+                const lines = text.split('\n').slice(1);
+                
+                const rawData = lines.map(line => {
+                    const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                    return {
+                        id: cols[0]?.replace(/"/g, "").trim(),
+                        parentId: cols[1]?.replace(/"/g, "").trim() === "0" ? null : cols[1]?.replace(/"/g, "").trim(),
+                        name: cols[3]?.replace(/"/g, "").trim() || "Chưa rõ tên"
+                    };
+                }).filter(d => d.id);
+
+                // Chuyển dữ liệu phẳng sang dạng cây
+                const dataStructure = d3.stratify()
+                    .id(d => d.id)
+                    .parentId(d => d.parentId)(rawData);
+
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                const svg = d3.select("#tree-container")
+                    .call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)));
+
+                const g = svg.append("g");
+                const tree = d3.tree().nodeSize([150, 250]);
+                const root = tree(dataStructure);
+
+                // Vẽ các đường nối
+                g.append("g")
+                    .attr("class", "links")
+                    .selectAll("path")
+                    .data(root.links())
+                    .join("path")
+                    .attr("class", "link")
+                    .attr("d", d3.linkHorizontal().x(d => d.y).y(d => d.x));
+
+                // Vẽ các nút
+                const node = g.append("g")
+                    .selectAll("g")
+                    .data(root.descendants())
+                    .join("g")
+                    .attr("transform", d => `translate(${d.y},${d.x})`);
+
+                node.append("circle").attr("r", 6);
+                node.append("text")
+                    .attr("dy", "0.31em")
+                    .attr("x", d => d.children ? -10 : 10)
+                    .attr("text-anchor", d => d.children ? "end" : "start")
+                    .text(d => d.data.name);
+
+            } catch (err) {
+                console.error(err);
+                alert("Lỗi dữ liệu: Hãy kiểm tra xem ID cha có tồn tại không.");
             }
-
-            // Chuyển danh sách phẳng sang cấu trúc phân cấp (Tree)
-            const listToTree = (data) => {
-                let map = {}, node, roots = [], i;
-                for (i = 0; i < data.length; i++) {
-                    map[data[i].id] = i; 
-                    data[i].children = []; 
-                }
-                for (i = 0; i < data.length; i++) {
-                    node = data[i];
-                    if (node.pid !== null && map[node.pid] !== undefined) {
-                        data[map[node.pid]].children.push(node);
-                    } else {
-                        roots.push(node);
-                    }
-                }
-                return roots[0];
-            };
-
-            const datascource = listToTree(data);
-
-            $('#chart-container').orgchart({
-                'data' : datascource,
-                'nodeContent': 'name',
-                'pan': true,
-                'zoom': true
-            });
         }
         init();
     </script>
