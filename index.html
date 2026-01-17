@@ -2,76 +2,88 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V82 (Fix Vô Danh)</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <title>Gia Phả Lê Công - V83 (Final Fix)</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; font-family: sans-serif; }
         #tree { width: 100%; height: 100%; }
+        #debug { position: fixed; top: 0; left: 0; width: 100%; background: #000; color: #0f0; z-index: 9999; font-size: 10px; max-height: 150px; overflow: auto; padding: 5px; }
         .bft-license-message { display: none !important; }
     </style>
 </head>
 <body>
+
+<div id="debug">Đang kiểm tra kết nối...</div>
 <div id="tree"></div>
+
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    // Sử dụng link export đơn giản nhất
-    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&sheet=Data`;
-    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&sheet=dData`;
+    
+    // Ép buộc lấy đúng GID (Trang chứa dữ liệu của bạn)
+    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&gid=0`; 
+    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&gid=1705210560`;
+
+    function log(m) { document.getElementById('debug').innerHTML += "<br>" + m; }
+
+    async function loadSheet(url) {
+        const res = await fetch(url);
+        const text = await res.text();
+        // Tách dòng và xử lý dấu phẩy
+        return text.split('\n').map(line => {
+            return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(item => item.replace(/"/g, '').trim());
+        });
+    }
 
     async function start() {
-        const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, complete:r}));
-        
         try {
-            const [res1, res2] = await Promise.all([fetchCSV(urlData), fetchCSV(urldData)]);
+            log("Đang tải dữ liệu...");
+            const [rows1, rows2] = await Promise.all([loadSheet(urlData), loadSheet(urldData)]);
             
-            // Hàm lấy dữ liệu theo VỊ TRÍ CỘT (Không quan tâm tên tiêu đề)
-            // Giả định: Cột 0=id, Cột 1=full_name, Cột 2=gender, Cột 3=fid/pid, Cột 4=mid
-            const parseRows = (rows, isSpouse = false) => {
-                return rows.slice(1).map(row => { // Bỏ qua hàng tiêu đề
-                    const id = String(row[0] || "").trim();
-                    if (!id) return null;
+            log("Data nhận được: " + rows1.length + " hàng. dData nhận được: " + rows2.length + " hàng.");
 
-                    let node = {
-                        id: id,
-                        name: String(row[1] || "").trim() || "ID: " + id,
-                        gender: String(row[2] || "").toLowerCase().includes("f") ? "female" : "male"
+            // Hàm map dữ liệu dựa trên tiêu đề (Bất kể thứ tự cột)
+            function mapData(rows) {
+                const head = rows[0].map(h => h.toLowerCase());
+                log("Cột tìm thấy: " + head.join(" | "));
+                
+                return rows.slice(1).map(row => {
+                    let obj = {};
+                    head.forEach((h, i) => obj[h] = row[i]);
+                    if (!obj.id) return null;
+                    return {
+                        id: obj.id,
+                        pids: obj.pid ? [obj.pid] : [],
+                        fid: obj.fid || null,
+                        mid: obj.mid || null,
+                        name: obj.full_name || "Lỗi Tên",
+                        gender: (obj.gender || "").toLowerCase().includes('f') ? "female" : "male"
                     };
-
-                    if (isSpouse) {
-                        node.pids = [String(row[3] || "").trim()]; // pid ở cột D
-                    } else {
-                        node.fid = String(row[3] || "").trim() || null; // fid ở cột D
-                        node.mid = String(row[4] || "").trim() || null; // mid ở cột E
-                    }
-                    return node;
                 }).filter(n => n !== null);
-            };
+            }
 
-            let nodesMembers = parseRows(res1.data, false);
-            let nodesSpouses = parseRows(res2.data, true);
+            const members = mapData(rows1);
+            const spouses = mapData(rows2);
 
-            // Tự động kết nối ngược từ Chồng sang Vợ (pids hai chiều)
-            let spouseLinks = {};
-            nodesSpouses.forEach(s => {
-                if (s.pids[0]) {
-                    if (!spouseLinks[s.pids[0]]) spouseLinks[s.pids[0]] = [];
-                    spouseLinks[s.pids[0]].push(s.id);
-                }
-            });
+            // Đồng bộ pids (kết nối hôn nhân 2 chiều)
+            let partnerMap = {};
+            spouses.forEach(s => { if(s.pids[0]) { if(!partnerMap[s.pids[0]]) partnerMap[s.pids[0]] = []; partnerMap[s.pids[0]].push(s.id); }});
+            members.forEach(m => { if(partnerMap[m.id]) m.pids = partnerMap[m.id]; });
 
-            nodesMembers.forEach(m => {
-                if (spouseLinks[m.id]) m.pids = spouseLinks[m.id];
-            });
+            log("Đang vẽ cây với " + (members.length + spouses.length) + " người...");
 
             new FamilyTree(document.getElementById("tree"), {
                 template: "tommy",
                 nodeBinding: { field_0: "name" },
-                nodes: [...nodesMembers, ...nodesSpouses]
+                nodes: [...members, ...spouses]
             });
 
-        } catch (e) { console.error(e); }
+            setTimeout(() => document.getElementById('debug').style.display = 'none', 5000);
+
+        } catch (e) {
+            log("LỖI CỰC NẶNG: " + e.message);
+        }
     }
+
     start();
 </script>
 </body>
