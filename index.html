@@ -2,76 +2,91 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
+    <title>Gia Phả Lê Công - Hệ Thống Liên Kết Sheet</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
         #tree { width: 100%; height: 100%; }
         .bft-license-message { display: none !important; }
-        #status { position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; z-index: 1000; }
+        #loading { position: fixed; top: 20px; left: 20px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; z-index: 1000; font-family: sans-serif; }
     </style>
 </head>
 <body>
 
-<div id="status">Đang nạp dữ liệu từ Google Sheets...</div>
+<div id="loading">Đang kết nối dữ liệu Data & dData...</div>
 <div id="tree"></div>
 
 <script>
-    // 1. THAY ĐỔI QUAN TRỌNG: Dùng link export trực tiếp thay vì link gviz
     const sheetID = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const finalUrl = `https://docs.google.com/spreadsheets/d/${sheetID}/export?format=csv&gid=1705210560`;
+    
+    // Link lấy dữ liệu từ 2 sheet riêng biệt
+    const urlData = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:csv&sheet=Data`;
+    const urldData = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:csv&sheet=dData`;
 
-    async function start() {
-        Papa.parse(finalUrl, {
-            download: true,
-            header: true,
-            skipEmptyLines: true,
-            complete: function(results) {
-                const data = results.data;
-                console.log("Dữ liệu nhận được:", data[0]); // Kiểm tra dòng đầu tiên trong Console
-
-                const nodes = data.map(row => {
-                    // Tự động khớp tên cột dù bạn đặt là "ID" hay "idHọ và tên"
-                    const id = row["ID"] || row["idHọ và tên"] || row["id"];
-                    if (!id) return null;
-
-                    return {
-                        id: id,
-                        fid: row["ID Cha"] || row["fid"] || row["id_Cha"] || null,
-                        mid: row["ID Mẹ"] || row["id_Mẹ"] || row["id_Cha/Mẹ"] || null,
-                        name: row["Họ và tên"] || "Vô danh",
-                        gender: (row["Giới tính"] || "").toLowerCase().includes("nữ") ? "female" : "male",
-                        address: row["Địa chỉ"] || row["Quê quán"] || ""
-                    };
-                }).filter(n => n !== null);
-
-                if (nodes.length === 0) {
-                    document.getElementById('status').innerText = "Lỗi: Không đọc được dữ liệu cột!";
-                    return;
-                }
-
-                document.getElementById('status').innerText = "Đã nạp " + nodes.length + " thành viên.";
-
-                // Vẽ sơ đồ
-                const family = new FamilyTree(document.getElementById("tree"), {
-                    mouseWheel: { zoom: true },
-                    template: "tommy",
-                    enableSearch: true,
-                    nodeBinding: {
-                        field_0: "name",
-                        field_1: "address"
-                    },
-                    nodes: nodes
-                });
-            },
-            error: function(err) {
-                document.getElementById('status').innerText = "Lỗi kết nối tới Google Sheets!";
-            }
+    // Hàm hỗ trợ tải CSV và chuyển thành mảng
+    function fetchCSV(url) {
+        return new Promise((resolve, reject) => {
+            Papa.parse(url, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: results => resolve(results.data),
+                error: err => reject(err)
+            });
         });
     }
 
-    start();
+    async function init() {
+        try {
+            // Tải song song cả 2 bảng
+            const [dataMembers, dataSpouses] = await Promise.all([
+                fetchCSV(urlData),
+                fetchCSV(urldData)
+            ]);
+
+            document.getElementById('loading').innerText = `Đã tải: ${dataMembers.length} thành viên & ${dataSpouses.length} vợ/chồng`;
+
+            // Gộp 2 mảng lại làm một để Balkan tìm thấy ID của nhau
+            const allPeople = [...dataMembers, ...dataSpouses];
+
+            const nodes = allPeople.map(row => {
+                const id = row["ID"] || row["idHọ và tên"] || row["id"];
+                if (!id) return null;
+
+                return {
+                    id: id,
+                    // Kết nối cha mẹ (có thể lấy ID từ bất kỳ sheet nào)
+                    fid: row["ID Cha"] || row["fid"] || null,
+                    mid: row["ID Mẹ"] || row["id_Cha/Mẹ"] || row["mid"] || null,
+                    name: row["Họ và tên"] || "Vô danh",
+                    gender: (row["Giới tính"] || "").toLowerCase().includes("nữ") ? "female" : "male",
+                    title: row["Địa chỉ"] || row["Ghi chú"] || ""
+                };
+            }).filter(n => n !== null);
+
+            // Xóa dòng thông báo sau 2 giây
+            setTimeout(() => document.getElementById('loading').style.display = 'none', 2000);
+
+            // Vẽ cây
+            new FamilyTree(document.getElementById("tree"), {
+                mouseWheel: { zoom: true },
+                template: "tommy",
+                enableSearch: true,
+                nodeBinding: {
+                    field_0: "name",
+                    field_1: "title"
+                },
+                nodes: nodes
+            });
+
+        } catch (error) {
+            document.getElementById('loading').innerText = "Lỗi nạp dữ liệu. Hãy kiểm tra tên Sheet!";
+            console.error(error);
+        }
+    }
+
+    init();
 </script>
 </body>
 </html>
