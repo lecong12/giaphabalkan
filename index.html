@@ -2,98 +2,93 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản V79</title>
+    <title>Gia Phả Lê Công - V81 (Mai Mối Tự Động)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
         #tree { width: 100%; height: 100%; }
         .bft-license-message { display: none !important; }
-        #status { position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: #fff; padding: 8px 15px; border-radius: 4px; z-index: 1000; font-family: sans-serif; }
+        #log { position: fixed; bottom: 10px; left: 10px; background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; z-index: 1000; border-radius: 5px; width: 350px; }
     </style>
 </head>
 <body>
 
-<div id="status">Đang kết nối Data & dData...</div>
+<div id="log">Đang khởi động V81...</div>
 <div id="tree"></div>
 
 <script>
-    const sheetID = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const urlData = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:csv&sheet=Data`;
-    const urldData = `https://docs.google.com/spreadsheets/d/${sheetID}/gviz/tq?tqx=out:csv&sheet=dData`;
+    const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`;
+    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=dData`;
 
-    function fetchCSV(url) {
-        return new Promise((resolve, reject) => {
-            Papa.parse(url, {
-                download: true,
-                header: true,
-                skipEmptyLines: true,
-                complete: results => resolve(results.data),
-                error: err => reject(err)
-            });
-        });
-    }
+    function log(msg) { document.getElementById('log').innerHTML += "<br>> " + msg; }
 
-    async function init() {
+    async function start() {
         try {
-            const [dataMembers, dataSpouses] = await Promise.all([
-                fetchCSV(urlData),
-                fetchCSV(urldData)
+            log("Đang nạp dữ liệu từ 2 Sheet...");
+            const [res1, res2] = await Promise.all([
+                new Promise(r => Papa.parse(urlData, {download:true, header:true, complete:r})),
+                new Promise(r => Papa.parse(urldData, {download:true, header:true, complete:r}))
             ]);
 
-            // 1. Xử lý thành viên gốc (Sheet Data)
-            const nodesMembers = dataMembers.map(row => {
-                const id = row["id"] || row["ID"];
-                if (!id) return null;
+            const clean = (obj) => {
+                let n = {};
+                for (let k in obj) n[k.toLowerCase().trim().replace(/\s/g, '_')] = obj[k];
+                return n;
+            };
+
+            let members = res1.data.map(clean).filter(p => p.id);
+            let spouses = res2.data.map(clean).filter(p => p.id);
+            
+            log(`Nạp xong: ${members.length} người tộc, ${spouses.length} dâu/rể.`);
+
+            // BƯỚC QUAN TRỌNG: MAI MỐI TỰ ĐỘNG
+            let spouseMap = {}; // Lưu danh sách vợ/chồng theo Partner ID (pid)
+            
+            let nodesSpouses = spouses.map(s => {
+                if (s.pid) {
+                    if (!spouseMap[s.pid]) spouseMap[s.pid] = [];
+                    spouseMap[s.pid].push(s.id);
+                }
                 return {
-                    id: id,
-                    fid: row["fid"] || null,
-                    mid: row["mid"] || null,
-                    name: row["full_name"] || "Không tên",
-                    gender: (row["gender"] || "").toLowerCase().includes("f") ? "female" : "male",
-                    address: row["Địa chỉ"] || "" 
+                    id: s.id,
+                    pids: s.pid ? [s.pid] : [],
+                    name: s.full_name || "Vô danh ("+s.id+")",
+                    gender: "female" // Mặc định dData là vợ, nếu là rể bạn hãy sửa trong Sheet
                 };
             });
 
-            // 2. Xử lý Vợ/Chồng (Sheet dData) và tạo liên kết hôn nhân
-            const nodesSpouses = dataSpouses.map(row => {
-                const id = row["id"] || row["ID"];
-                const partnerId = row["pid"]; // Cột kết nối với chồng/vợ ở bảng Data
-                if (!id) return null;
-
+            let nodesMembers = members.map(m => {
+                // Nếu tìm thấy vợ ở sheet dData, thì gắn ID vợ vào pids của chồng
+                let mySpouses = spouseMap[m.id] || [];
                 return {
-                    id: id,
-                    pids: partnerId ? [partnerId] : [], // pids là mảng các ID vợ/chồng trong Balkan
-                    name: row["full_name"] || "Không tên",
-                    gender: (row["gender"] || "").toLowerCase().includes("f") ? "female" : "male",
-                    address: row["Địa chỉ"] || ""
+                    id: m.id,
+                    fid: m.fid || null,
+                    mid: m.mid || null,
+                    pids: mySpouses,
+                    name: m.full_name || "Vô danh ("+m.id+")",
+                    gender: "male"
                 };
             });
 
-            const allNodes = [...nodesMembers, ...nodesSpouses].filter(n => n !== null);
+            const allNodes = [...nodesMembers, ...nodesSpouses];
+            log("Đang dựng cây sơ đồ...");
 
-            document.getElementById('status').innerText = `Đã nạp ${allNodes.length} người.`;
-            setTimeout(() => document.getElementById('status').style.display = 'none', 3000);
-
-            // 3. Vẽ sơ đồ
             new FamilyTree(document.getElementById("tree"), {
-                mouseWheel: { zoom: true },
                 template: "tommy",
-                enableSearch: true,
-                nodeBinding: {
-                    field_0: "name",
-                    field_1: "address"
-                },
+                nodeBinding: { field_0: "name" },
                 nodes: allNodes
             });
 
-        } catch (error) {
-            document.getElementById('status').innerText = "Lỗi nạp dữ liệu!";
-            console.error(error);
+            log("HOÀN TẤT!");
+            setTimeout(() => document.getElementById('log').style.display='none', 5000);
+
+        } catch (e) {
+            log("LỖI: " + e.message);
         }
     }
-
-    init();
+    start();
 </script>
 </body>
 </html>
