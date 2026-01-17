@@ -2,10 +2,10 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V105</title>
+    <title>Gia Phả Lê Công - V106 (Hiện Bà Vợ)</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #f8f9fa; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
         #tree { width: 100%; height: 100%; }
         .bft-license-message { display: none !important; }
     </style>
@@ -23,62 +23,64 @@
             const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
             return data.table.rows.map(row => {
                 let obj = {};
-                row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
+                row.c.forEach((cell, i) => { 
+                    if (cols[i]) {
+                        let val = cell ? cell.v : null;
+                        obj[cols[i]] = val !== null ? String(val).trim() : null;
+                    }
+                });
                 return obj;
             });
         }
 
         async function start() {
             try {
-                const [data, dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
+                // Tải dữ liệu từ 2 bảng
+                const [membersData, spousesData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
                 
-                // 1. Map vợ chồng 2 chiều
-                let pidsMap = {};
-                dData.forEach(s => {
+                let nodes = [];
+                let spouseMap = {}; // Để lưu danh sách vợ của từng ông chồng
+
+                // 1. Xử lý bảng dData trước để lấy danh sách vợ
+                spousesData.forEach(s => {
                     if (s.id && s.pid) {
-                        if (!pidsMap[s.id]) pidsMap[s.id] = [];
-                        pidsMap[s.id].push(s.pid);
-                        if (!pidsMap[s.pid]) pidsMap[s.pid] = [];
-                        pidsMap[s.pid].push(s.id);
+                        // Lưu mối quan hệ: ID chồng -> danh sách ID vợ
+                        if (!spouseMap[s.pid]) spouseMap[s.pid] = [];
+                        spouseMap[s.pid].push(s.id);
+                        
+                        // Đưa bà vợ vào danh sách node
+                        nodes.push({
+                            id: s.id,
+                            pids: [s.pid], // Vợ gọi ID chồng
+                            name: s.full_name || "Bà (Chưa rõ tên)",
+                            gender: "female"
+                        });
                     }
                 });
 
-                // 2. Gom dữ liệu
-                let nodes = [];
-                data.forEach(m => {
+                // 2. Xử lý bảng Data (Thành viên tộc)
+                membersData.forEach(m => {
                     if (m.id) {
                         nodes.push({
                             id: m.id,
                             fid: m.fid || null,
                             mid: m.mid || null,
-                            pids: pidsMap[m.id] || [],
+                            pids: spouseMap[m.id] || [], // Chồng gọi danh sách ID vợ
                             name: m.full_name,
                             gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
                         });
                     }
                 });
 
-                dData.forEach(s => {
-                    if (s.id) {
-                        nodes.push({
-                            id: s.id,
-                            pids: pidsMap[s.id] || [],
-                            name: s.full_name,
-                            gender: "female"
-                        });
-                    }
-                });
-
-                // 3. Cấu hình vẽ cây (Tối ưu giao diện điện thoại)
+                // 3. Vẽ cây
                 new FamilyTree(document.getElementById("tree"), {
                     template: "hugo",
-                    layout: FamilyTree.mixed, // Sắp xếp thông minh để tránh chồng chéo
-                    scaleInitial: FamilyTree.match.boundary, // Tự thu nhỏ để vừa màn hình
+                    layout: FamilyTree.mixed,
                     nodeBinding: { field_0: "name" },
                     nodes: nodes
                 });
 
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error("Lỗi:", e); }
         }
         start();
     </script>
