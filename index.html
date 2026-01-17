@@ -2,88 +2,85 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V83 (Final Fix)</title>
+    <title>Gia Phả Lê Công - Bản Hoàn Thiện</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; font-family: sans-serif; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #f0f2f5; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
         #tree { width: 100%; height: 100%; }
-        #debug { position: fixed; top: 0; left: 0; width: 100%; background: #000; color: #0f0; z-index: 9999; font-size: 10px; max-height: 150px; overflow: auto; padding: 5px; }
+        /* Ẩn dòng chữ quảng cáo của thư viện */
         .bft-license-message { display: none !important; }
     </style>
 </head>
 <body>
-
-<div id="debug">Đang kiểm tra kết nối...</div>
 <div id="tree"></div>
-
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    
-    // Ép buộc lấy đúng GID (Trang chứa dữ liệu của bạn)
     const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&gid=0`; 
     const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&gid=1705210560`;
 
-    function log(m) { document.getElementById('debug').innerHTML += "<br>" + m; }
-
-    async function loadSheet(url) {
-        const res = await fetch(url);
-        const text = await res.text();
-        // Tách dòng và xử lý dấu phẩy
-        return text.split('\n').map(line => {
-            return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(item => item.replace(/"/g, '').trim());
-        });
-    }
-
     async function start() {
+        const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, header:true, skipEmptyLines:true, complete:r}));
+        
         try {
-            log("Đang tải dữ liệu...");
-            const [rows1, rows2] = await Promise.all([loadSheet(urlData), loadSheet(urldData)]);
+            const [res1, res2] = await Promise.all([fetchCSV(urlData), fetchCSV(urldData)]);
             
-            log("Data nhận được: " + rows1.length + " hàng. dData nhận được: " + rows2.length + " hàng.");
+            // Hàm xử lý dữ liệu và làm sạch tên cột
+            const process = (data) => data.map(row => {
+                let n = {};
+                for (let k in row) n[k.toLowerCase().trim()] = row[k];
+                return n;
+            }).filter(p => p.id);
 
-            // Hàm map dữ liệu dựa trên tiêu đề (Bất kể thứ tự cột)
-            function mapData(rows) {
-                const head = rows[0].map(h => h.toLowerCase());
-                log("Cột tìm thấy: " + head.join(" | "));
-                
-                return rows.slice(1).map(row => {
-                    let obj = {};
-                    head.forEach((h, i) => obj[h] = row[i]);
-                    if (!obj.id) return null;
-                    return {
-                        id: obj.id,
-                        pids: obj.pid ? [obj.pid] : [],
-                        fid: obj.fid || null,
-                        mid: obj.mid || null,
-                        name: obj.full_name || "Lỗi Tên",
-                        gender: (obj.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                    };
-                }).filter(n => n !== null);
-            }
+            let members = process(res1.data);
+            let spouses = process(res2.data);
 
-            const members = mapData(rows1);
-            const spouses = mapData(rows2);
-
-            // Đồng bộ pids (kết nối hôn nhân 2 chiều)
+            // Tạo bản đồ mai mối
             let partnerMap = {};
-            spouses.forEach(s => { if(s.pids[0]) { if(!partnerMap[s.pids[0]]) partnerMap[s.pids[0]] = []; partnerMap[s.pids[0]].push(s.id); }});
-            members.forEach(m => { if(partnerMap[m.id]) m.pids = partnerMap[m.id]; });
-
-            log("Đang vẽ cây với " + (members.length + spouses.length) + " người...");
-
-            new FamilyTree(document.getElementById("tree"), {
-                template: "tommy",
-                nodeBinding: { field_0: "name" },
-                nodes: [...members, ...spouses]
+            spouses.forEach(s => {
+                if(s.pid) {
+                    if(!partnerMap[s.pid]) partnerMap[s.pid] = [];
+                    partnerMap[s.pid].push(s.id);
+                }
             });
 
-            setTimeout(() => document.getElementById('debug').style.display = 'none', 5000);
+            // Gộp và chuẩn hóa Node cho Balkan
+            const allNodes = [
+                ...members.map(m => ({
+                    id: m.id,
+                    fid: m.fid || null,
+                    mid: m.mid || null,
+                    pids: partnerMap[m.id] || [],
+                    name: m.full_name,
+                    gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male",
+                    title: m.address || ""
+                })),
+                ...spouses.map(s => ({
+                    id: s.id,
+                    pids: [s.pid],
+                    name: s.full_name,
+                    gender: (s.gender || "").toLowerCase().includes('f') ? "female" : "male",
+                    title: s.address || ""
+                }))
+            ];
 
-        } catch (e) {
-            log("LỖI CỰC NẶNG: " + e.message);
-        }
+            // Cấu hình vẽ cây ĐẸP
+            new FamilyTree(document.getElementById("tree"), {
+                mouseWheel: { zoom: true },
+                template: "hugo", // Đổi sang Hugo để nhìn hiện đại hơn tommy
+                mode: 'dark',
+                enableSearch: true,
+                siblingSeparation: 100, // Tăng khoảng cách giữa các anh em
+                levelSeparation: 150,   // Tăng khoảng cách giữa các thế hệ
+                nodeBinding: {
+                    field_0: "name",
+                    field_1: "title"
+                },
+                nodes: allNodes
+            });
+
+        } catch (e) { console.error("Lỗi:", e); }
     }
-
     start();
 </script>
 </body>
