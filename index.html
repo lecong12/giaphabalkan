@@ -3,60 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gia Phả Lê Công - Bản Vĩnh Viễn</title>
-    <script src="https://balkan.app/js/familytree.js"></script> 
+    <title>Gia Phả Lê Công - Hệ Thống Quản Trị</title>
+    <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
         #tree { width: 100%; height: 100%; }
-        /* Xóa bỏ thông báo bản quyền của Balkan bằng CSS */
+        #toolbar { position: fixed; top: 10px; left: 10px; z-index: 100; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        button { cursor: pointer; background: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; margin-right: 5px; }
+        button:hover { background: #0056b3; }
         .bft-license-message { display: none !important; }
     </style>
 </head>
 <body>
-    <div id="tree"></div>
-    <script>
-        const ssId = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
-        const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`;
 
-        async function init() {
-            try {
-                const response = await fetch(url);
-                const csvText = await response.text();
-                const lines = csvText.split('\n').slice(1);
-                
-                const nodes = lines.map(line => {
-                    const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-                    const id = cols[0]?.replace(/"/g, "").trim();
-                    const fid = cols[1]?.replace(/"/g, "").trim();
-                    const mid = cols[2]?.replace(/"/g, "").trim();
-                    
-                    if (!id) return null;
+<div id="toolbar">
+    <span style="font-weight:bold; color:#333;">Dòng họ Lê Công: </span>
+    <button onclick="downloadGedcom()">Tải File GEDCOM chuẩn</button>
+    <small style="display:block; margin-top:5px; color:#666;">(File chứa đầy đủ tất cả các cột dữ liệu)</small>
+</div>
 
-                    return {
-                        id: id,
-                        fid: (fid === "0" || fid === "") ? null : fid,
-                        mid: (mid === "0" || mid === "") ? null : mid,
-                        name: cols[3]?.replace(/"/g, "").trim() || "Thành viên",
-                        gender: (cols[4] && cols[4].toLowerCase().includes('fe')) ? 'female' : 'male'
-                    };
-                }).filter(n => n !== null);
+<div id="tree"></div>
 
-                // Dùng cấu hình này để tối ưu cho dữ liệu lớn (hàng nghìn người)
-                const family = new FamilyTree(document.getElementById("tree"), {
-                    mouseWheel: { zoom: true },
-                    template: "tommy",
-                    nodeBinding: { field_0: "name" },
-                    nodes: nodes,
-                    // Thuật toán vẽ nhanh cho dữ liệu lớn
-                    layout: FamilyTree.mixed,
-                    enableSearch: true
-                });
+<script>
+    // ID file Google Sheets mới nhất của bạn
+    const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv`;
+    let globalData = [];
 
-            } catch (e) {
-                console.error("Lỗi dữ liệu:", e);
+    // 1. Hàm tải và xử lý dữ liệu
+    async function loadData() {
+        const response = await fetch(csvUrl);
+        const text = await response.text();
+        const lines = text.split('\n');
+        const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+        
+        globalData = lines.slice(1).map(line => {
+            const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+            let obj = {};
+            headers.forEach((h, i) => {
+                obj[h] = (cols[i] || "").replace(/^"|"$/g, '').trim();
+            });
+            return obj;
+        });
+
+        drawTree();
+    }
+
+    // 2. Hàm vẽ cây (Balkan)
+    function drawTree() {
+        const nodes = globalData.map(p => {
+            const id = p["ID"] || p["idHọ và tên"];
+            if (!id) return null;
+            return {
+                id: id,
+                fid: p["ID Cha"] || p["fid"] || null,
+                mid: p["ID Mẹ"] || p["id_Cha/Mẹ"] || null,
+                name: p["Họ và tên"] || "Vô danh",
+                gender: (p["Giới tính"] || "").toLowerCase().includes("nữ") ? "female" : "male",
+                address: p["Địa chỉ"] || ""
+            };
+        }).filter(n => n !== null);
+
+        new FamilyTree(document.getElementById("tree"), {
+            template: "tommy",
+            nodeBinding: { field_0: "name", field_1: "address" },
+            nodes: nodes,
+            enableSearch: true,
+            mouseWheel: { zoom: true }
+        });
+    }
+
+    // 3. Hàm tạo và tải file GEDCOM (Vét sạch mọi cột)
+    function downloadGedcom() {
+        let ged = "0 HEAD\n1 CHAR UTF-8\n1 GEDC\n2 VERS 5.5.1\n0 @I0@ INDI\n1 NAME He Thong Le Cong\n";
+        const headers = Object.keys(globalData[0]);
+
+        globalData.forEach(p => {
+            const id = p["ID"] || p["idHọ và tên"];
+            if (!id) return;
+
+            ged += `0 @I${id}@ INDI\n`;
+            ged += `1 NAME ${p["Họ và tên"] || "Vo danh"}\n`;
+            
+            let sex = (p["Giới tính"] || "").toLowerCase().includes("nữ") ? "F" : "M";
+            ged += `1 SEX ${sex}\n`;
+
+            if (p["ID Cha"]) ged += `1 FAMC @F${p["ID Cha"]}_${p["ID Mẹ"] || 0}@\n`;
+
+            // Vét sạch tất cả các cột còn lại vào NOTE
+            headers.forEach(h => {
+                if (!["ID", "Họ và tên", "ID Cha", "ID Mẹ", "Giới tính"].includes(h) && p[h]) {
+                    ged += `1 NOTE ${h}: ${p[h]}\n`;
+                }
+            });
+        });
+
+        // Tạo FAM records
+        let fams = new Set();
+        globalData.forEach(p => {
+            const f = p["ID Cha"], m = p["ID Mẹ"];
+            if (f || m) {
+                const fId = `F${f || 0}_${m || 0}`;
+                if (!fams.has(fId)) {
+                    ged += `0 @${fId}@ FAM\n`;
+                    if (f) ged += `1 HUSB @I${f}@\n`;
+                    if (m) ged += `1 WIFE @I${m}@\n`;
+                    fams.add(fId);
+                }
+                ged += `1 CHIL @I${p["ID"] || p["idHọ và tên"]}@\n`;
             }
-        }
-        init();
-    </script>
+        });
+
+        ged += "0 TRLR";
+        
+        const blob = new Blob([ged], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'GiaPhaLeCong_Chuan.ged';
+        a.click();
+    }
+
+    loadData();
+</script>
 </body>
 </html>
