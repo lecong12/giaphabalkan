@@ -2,89 +2,81 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Chuẩn</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
     <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
-        #tree { width: 100%; height: 100%; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
+        #tree { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        /* Hiệu ứng loading giống Xtea */
+        #loader {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px; background: rgba(255,255,255,0.9); border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 10;
+        }
     </style>
 </head>
 <body>
+    <div id="loader">Đang khởi tạo cây gia phả Lê Công...</div>
     <div id="tree"></div>
+
     <script>
-        [span_0](start_span)// ID Spreadsheet mới của bạn[span_0](end_span)
-        const ssId = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
+        // Link Google Sheets mới bạn đã cung cấp
+        const SHEET_ID = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
+        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
 
-        function clean(val) { 
-            if (!val) return null;
-            let res = String(val).replace(/"/g, "").trim();
-            return (res === "0" || res === "") ? null : res;
-        }
+        // Hàm làm sạch dữ liệu
+        const clean = (v) => v ? v.replace(/"/g, "").trim() : "";
 
-        function parseCSV(text) {
-            const lines = text.split('\n');
-            if (lines.length < 2) return [];
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
-            return lines.slice(1).map(line => {
-                const values = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-                let obj = {};
-                headers.forEach((header, i) => {
-                    obj[header] = values[i] ? values[i].replace(/^"|"$/g, '').trim() : "";
-                });
-                return obj;
-            });
-        }
-
-        async function init() {
+        async function drawTree() {
             try {
-                [span_1](start_span)// Tải dữ liệu từ sheet "Data"[span_1](end_span)
-                const response = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`);
+                const response = await fetch(SHEET_URL);
                 const csvText = await response.text();
-                const data = parseCSV(csvText);
-
+                
+                // Tách dòng và xử lý tiêu đề
+                const lines = csvText.split('\n');
+                const headers = lines[0].split(',').map(h => clean(h).toLowerCase());
+                
                 const nodes = [];
-                data.forEach(p => {
-                    const id = clean(p.id);
-                    if (!id) return;
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                    let row = {};
+                    headers.forEach((h, index) => { row[h] = clean(cols[index]); });
 
-                    const fid = clean(p.fid);
-                    const mid = clean(p.mid);
-                    const gender = (p.gender && p.gender.toLowerCase().includes('fe')) ? 'female' : 'male';
+                    if (row.id) {
+                        nodes.push({
+                            id: row.id,
+                            fid: (row.fid && row.fid !== "0") ? row.fid : null,
+                            mid: (row.mid && row.mid !== "0") ? row.mid : null,
+                            name: row.full_name || "Thành viên " + row.id,
+                            gender: (row.gender && row.gender.toLowerCase().includes('fe')) ? 'female' : 'male',
+                            address: row.adress || "",
+                            note: row.notes || ""
+                        });
+                    }
+                }
 
-                    nodes.push({
-                        id: id,
-                        fid: fid,
-                        mid: mid,
-                        name: p.full_name || "Vô danh",
-                        gender: gender,
-                        address: p.adress,
-                        notes: p.notes
-                    });
-                });
+                document.getElementById('loader').style.display = 'none';
 
+                // Khởi tạo Balkan FamilyTree
                 const family = new FamilyTree(document.getElementById("tree"), {
+                    mouseWheel: { zoom: true },
                     template: "tommy",
                     nodeBinding: {
                         field_0: "name",
                         field_1: "address"
                     },
                     enableSearch: true,
-                    mouseWheel: { zoom: true },
-                    // Layout thông minh tự động kết nối các nút
                     layout: FamilyTree.mixed,
                     nodes: nodes
                 });
 
-                // Tự động tìm cụ tổ (thường là ID 1) để lấy làm tâm điểm
-                family.on('init', () => { family.fit(); });
-
-            } catch (error) {
-                console.error("Lỗi tải dữ liệu:", error);
-                document.getElementById('tree').innerHTML = "<p style='padding:20px;'>Không thể tải dữ liệu. Vui lòng kiểm tra quyền chia sẻ của File Google Sheets.</p>";
+            } catch (err) {
+                document.getElementById('loader').innerHTML = "Lỗi tải dữ liệu. Hãy đảm bảo Sheets đã được chia sẻ công khai.";
             }
         }
 
-        init();
+        window.onload = drawTree;
     </script>
 </body>
 </html>
