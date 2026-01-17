@@ -2,66 +2,81 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản V66</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
+    <script src="https://balkan.app/js/FamilyTree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; background: #fff; }
-        .chart { height: 100%; width: 100%; }
-        .node { padding: 10px; border: 2px solid #007bff; border-radius: 5px; background: #f9f9f9; width: 150px; }
-        .node p { margin: 0; font-size: 12px; font-weight: bold; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }
+        #tree { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        /* Hiệu ứng loading giống Xtea */
+        #loader {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px; background: rgba(255,255,255,0.9); border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 10;
+        }
     </style>
 </head>
 <body>
-    <div class="chart" id="tree-simple"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
+    <div id="loader">Đang khởi tạo cây gia phả Lê Công...</div>
+    <div id="tree"></div>
 
     <script>
+        // Link Google Sheets mới bạn đã cung cấp
         const SHEET_ID = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
-        const URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
+        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
 
-        async function init() {
+        // Hàm làm sạch dữ liệu
+        const clean = (v) => v ? v.replace(/"/g, "").trim() : "";
+
+        async function drawTree() {
             try {
-                const res = await fetch(URL);
-                const text = await res.text();
-                const lines = text.split('\n').slice(1);
+                const response = await fetch(SHEET_URL);
+                const csvText = await response.text();
                 
-                const nodesMap = {};
-                const treeData = { chart: { container: "#tree-simple", connecters: { type: "step" } }, nodeStructure: null };
+                // Tách dòng và xử lý tiêu đề
+                const lines = csvText.split('\n');
+                const headers = lines[0].split(',').map(h => clean(h).toLowerCase());
+                
+                const nodes = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                    let row = {};
+                    headers.forEach((h, index) => { row[h] = clean(cols[index]); });
 
-                const rawNodes = lines.map(line => {
-                    const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-                    const id = cols[0]?.replace(/"/g, "").trim();
-                    const fid = cols[1]?.replace(/"/g, "").trim();
-                    return {
-                        id: id,
-                        parentId: (fid === "0" || fid === "") ? null : fid,
-                        text: { name: cols[3]?.replace(/"/g, "").trim() || "Chưa rõ" }
-                    };
-                }).filter(n => n.id);
-
-                // Tạo Map để truy xuất nhanh
-                rawNodes.forEach(n => { nodesMap[n.id] = { ...n, children: [] }; });
-
-                let root = null;
-                rawNodes.forEach(n => {
-                    if (n.parentId && nodesMap[n.parentId]) {
-                        nodesMap[n.parentId].children.push(nodesMap[n.id]);
-                    } else if (!root) {
-                        root = nodesMap[n.id]; // Lấy người đầu tiên không cha làm gốc
+                    if (row.id) {
+                        nodes.push({
+                            id: row.id,
+                            fid: (row.fid && row.fid !== "0") ? row.fid : null,
+                            mid: (row.mid && row.mid !== "0") ? row.mid : null,
+                            name: row.full_name || "Thành viên " + row.id,
+                            gender: (row.gender && row.gender.toLowerCase().includes('fe')) ? 'female' : 'male',
+                            address: row.adress || "",
+                            note: row.notes || ""
+                        });
                     }
+                }
+
+                document.getElementById('loader').style.display = 'none';
+
+                // Khởi tạo Balkan FamilyTree
+                const family = new FamilyTree(document.getElementById("tree"), {
+                    mouseWheel: { zoom: true },
+                    template: "tommy",
+                    nodeBinding: {
+                        field_0: "name",
+                        field_1: "address"
+                    },
+                    enableSearch: true,
+                    layout: FamilyTree.mixed,
+                    nodes: nodes
                 });
 
-                treeData.nodeStructure = root;
-                new Treant(treeData);
-
-            } catch (e) {
-                console.error(e);
-                document.body.innerHTML = "Có lỗi xảy ra khi xử lý dữ liệu. Kiểm tra bảng tính.";
+            } catch (err) {
+                document.getElementById('loader').innerHTML = "Lỗi tải dữ liệu. Hãy đảm bảo Sheets đã được chia sẻ công khai.";
             }
         }
-        init();
+
+        window.onload = drawTree;
     </script>
 </body>
 </html>
