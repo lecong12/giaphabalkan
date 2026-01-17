@@ -2,7 +2,8 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V89</title>
+    <title>Gia Phả Lê Công - V94 (Logic Chuẩn)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
@@ -14,71 +15,65 @@
 <div id="tree"></div>
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+    const url1 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`; 
+    const url2 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=1705210560`;
 
-    async function getSheet(gid) {
-        const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-        const res = await fetch(url);
-        const text = await res.text();
-        const json = JSON.parse(text.substr(47).slice(0, -2));
-        const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
-        return json.table.rows.map(row => {
-            let obj = {};
-            row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? cell.v : null; });
-            return obj;
-        });
-    }
-
-    async function init() {
+    async function start() {
+        const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, header:true, skipEmptyLines:true, complete:r}));
+        
         try {
-            // Tải dữ liệu từ 2 Sheet
-            const [data, dData] = await Promise.all([getSheet(0), getSheet(1705210560)]);
+            const [res1, res2] = await Promise.all([fetchCSV(url1), fetchCSV(url2)]);
+            const s = (v) => v ? String(v).trim() : null;
 
-            // 1. Tạo danh sách vợ chồng từ dData
-            let spouseMap = {}; 
-            dData.forEach(s => {
-                const partnerId = s.pid ? String(s.pid).trim() : null;
-                const myId = s.id ? String(s.id).trim() : null;
-                if (partnerId && myId) {
-                    if (!spouseMap[partnerId]) spouseMap[partnerId] = [];
-                    spouseMap[partnerId].push(myId);
+            // 1. Xử lý bảng dData (Dâu/Rể)
+            // Lưu lại danh sách vợ/chồng để gắn vào người ở bảng Data
+            let partnerMapping = {}; 
+            let spouses = res2.data.map(row => {
+                const myId = s(row.id);
+                const husbandId = s(row.pid); // Cột pid trỏ về ông Mao hoặc người ở bảng Data
+                
+                if (husbandId) {
+                    if (!partnerMapping[husbandId]) partnerMapping[husbandId] = [];
+                    partnerMapping[husbandId].push(myId);
                 }
-            });
 
-            // 2. Xử lý thành viên gốc (Sheet Data)
-            const membersNodes = data.map(m => {
-                const id = String(m.id).trim();
                 return {
-                    id: id,
-                    fid: m.fid ? String(m.fid).trim() : null,
-                    mid: m.mid ? String(m.mid).trim() : null,
-                    pids: spouseMap[id] || [], // Lấy vợ/chồng từ map đã tạo
-                    name: m.full_name || "Vô danh",
-                    gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    id: myId,
+                    pids: husbandId ? [husbandId] : [],
+                    name: row.full_name,
+                    gender: (row.gender || "").toLowerCase().includes('f') ? "female" : "male"
                 };
-            });
+            }).filter(n => n.id);
 
-            // 3. Xử lý thành viên phụ (Sheet dData)
-            const spousesNodes = dData.map(s => {
-                const id = String(s.id).trim();
-                const partnerId = s.pid ? String(s.pid).trim() : null;
+            // 2. Xử lý bảng Data (Thành viên chính)
+            let members = res1.data.map(row => {
+                const myId = s(row.id);
                 return {
-                    id: id,
-                    pids: partnerId ? [partnerId] : [],
-                    name: s.full_name || "Vô danh",
-                    gender: (s.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    id: myId,
+                    fid: s(row.fid),
+                    mid: s(row.mid), // Gọi ID từ bảng dData (ví dụ: 5001)
+                    pids: partnerMapping[myId] || [], // Tự động lấy vợ từ dData
+                    name: row.full_name,
+                    gender: (row.gender || "").toLowerCase().includes('f') ? "female" : "male"
                 };
-            });
+            }).filter(n => n.id);
 
-            const allNodes = [...membersNodes, ...spousesNodes].filter(n => n.id !== "null");
+            // 3. Gộp tất cả các Node
+            const allNodes = [...members, ...spouses];
 
+            // 4. Khởi tạo cây
             new FamilyTree(document.getElementById("tree"), {
                 template: "hugo",
+                layout: FamilyTree.mixed,
                 nodeBinding: { field_0: "name" },
                 nodes: allNodes
             });
-        } catch (e) { console.error("Lỗi kết nối:", e); }
+
+        } catch (e) {
+            console.error("Lỗi hệ thống: ", e);
+        }
     }
-    init();
+    start();
 </script>
 </body>
 </html>
