@@ -2,94 +2,83 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V97</title>
+    <title>Gia Phả Lê Công - V98</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #eee; }
         #tree { width: 100%; height: 100%; }
-        .bft-license-message { display: none !important; }
+        #msg { position: fixed; top: 10px; left: 10px; z-index: 999; background: white; padding: 10px; border: 1px solid #ccc; font-family: sans-serif; }
     </style>
 </head>
 <body>
+
+<div id="msg">Đang khởi tạo...</div>
 <div id="tree"></div>
+
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const url1 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`; 
+    // Sử dụng đường dẫn tải CSV đơn giản nhất
+    const url1 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`;
     const url2 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=1705210560`;
 
-    // Hàm đọc CSV "siêu sạch" - Loại bỏ mọi lỗi định dạng của Google
-    async function getData(url) {
-        const res = await fetch(url);
-        const text = await res.text();
-        const rows = text.split(/\r?\n/).map(row => {
-            // Tách cột bằng dấu phẩy, xử lý cả trường hợp nội dung có dấu phẩy bên trong ngoặc kép
-            return row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(cell => cell.replace(/^"|"$/g, '').trim());
-        });
-        const headers = rows[0].map(h => h.toLowerCase());
-        return rows.slice(1).map(row => {
-            let obj = {};
-            headers.forEach((h, i) => { if (row[i]) obj[h] = row[i]; });
-            return obj;
-        }).filter(o => o.id);
-    }
-
     async function start() {
+        const status = document.getElementById('msg');
         try {
-            const [data, dData] = await Promise.all([getData(url1), getData(url2)]);
+            status.innerHTML = "Đang tải dữ liệu...";
+            const fetchCSV = async (url) => {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Không thể truy cập Google Sheets. Hãy kiểm tra quyền Chia sẻ!");
+                const txt = await res.text();
+                const lines = txt.split('\n').map(l => l.split(',').map(c => c.replace(/"/g, '').trim()));
+                const head = lines[0].map(h => h.toLowerCase());
+                return lines.slice(1).map(row => {
+                    let o = {};
+                    head.forEach((h, i) => { if(row[i]) o[h] = row[i]; });
+                    return o;
+                });
+            };
 
-            // 1. Tạo bản đồ Vợ/Chồng (pids)
-            let pidsMap = {};
-            dData.forEach(row => {
-                const myId = row.id;
-                const husId = row.pid;
-                if (myId && husId) {
-                    if (!pidsMap[husId]) pidsMap[husId] = [];
-                    pidsMap[husId].push(myId);
+            const [data1, data2] = await Promise.all([fetchCSV(url1), fetchCSV(url2)]);
+            status.innerHTML = `Đã nhận: ${data1.length + data2.length} người. Đang vẽ...`;
+
+            // Xử lý quan hệ theo logic của bạn
+            let partnersMap = {};
+            data2.forEach(s => {
+                if(s.pid) {
+                    if(!partnersMap[s.pid]) partnersMap[s.pid] = [];
+                    partnersMap[s.pid].push(s.id);
                 }
             });
 
-            // 2. Gộp dữ liệu Thành viên + Dâu rể
-            let allNodes = [];
-
-            // Add người trong tộc
-            data.forEach(m => {
-                allNodes.push({
+            const nodes = [
+                ...data1.map(m => ({
                     id: m.id,
                     fid: m.fid || null,
                     mid: m.mid || null,
-                    pids: pidsMap[m.id] || [],
-                    name: m.full_name || "Vô danh",
+                    pids: partnersMap[m.id] || [],
+                    name: m.full_name,
                     gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                });
-            });
-
-            // Add dâu rể
-            dData.forEach(s => {
-                allNodes.push({
+                })),
+                ...data2.map(s => ({
                     id: s.id,
                     pids: [s.pid],
-                    name: s.full_name || "Vợ/Chồng",
+                    name: s.full_name,
                     gender: "female"
-                });
-            });
+                }))
+            ].filter(n => n.id);
 
-            // 3. Kiểm tra tính tồn tại của Cha/Mẹ để tránh "treo" cây
-            const validIds = new Set(allNodes.map(n => n.id));
-            allNodes.forEach(n => {
-                if (n.fid && !validIds.has(n.fid)) n.fid = null;
-                if (n.mid && !validIds.has(n.mid)) n.mid = null;
-            });
-
-            // 4. Vẽ cây
             new FamilyTree(document.getElementById("tree"), {
                 template: "hugo",
                 nodeBinding: { field_0: "name" },
-                nodes: allNodes
+                nodes: nodes
             });
 
+            status.style.display = "none";
+
         } catch (e) {
+            status.style.color = "red";
+            status.innerHTML = "LỖI: " + e.message;
             console.error(e);
-            document.body.innerHTML = "<div style='padding:20px'>Đã xảy ra lỗi nạp dữ liệu. Vui lòng kiểm tra quyền chia sẻ file Google Sheets!</div>";
         }
     }
     start();
