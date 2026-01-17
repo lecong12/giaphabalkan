@@ -2,91 +2,75 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V81 (Mai Mối Tự Động)</title>
+    <title>Gia Phả Lê Công - V82 (Fix Vô Danh)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
         #tree { width: 100%; height: 100%; }
         .bft-license-message { display: none !important; }
-        #log { position: fixed; bottom: 10px; left: 10px; background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; z-index: 1000; border-radius: 5px; width: 350px; }
     </style>
 </head>
 <body>
-
-<div id="log">Đang khởi động V81...</div>
 <div id="tree"></div>
-
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Data`;
-    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=dData`;
-
-    function log(msg) { document.getElementById('log').innerHTML += "<br>> " + msg; }
+    // Sử dụng link export đơn giản nhất
+    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&sheet=Data`;
+    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&sheet=dData`;
 
     async function start() {
+        const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, complete:r}));
+        
         try {
-            log("Đang nạp dữ liệu từ 2 Sheet...");
-            const [res1, res2] = await Promise.all([
-                new Promise(r => Papa.parse(urlData, {download:true, header:true, complete:r})),
-                new Promise(r => Papa.parse(urldData, {download:true, header:true, complete:r}))
-            ]);
+            const [res1, res2] = await Promise.all([fetchCSV(urlData), fetchCSV(urldData)]);
+            
+            // Hàm lấy dữ liệu theo VỊ TRÍ CỘT (Không quan tâm tên tiêu đề)
+            // Giả định: Cột 0=id, Cột 1=full_name, Cột 2=gender, Cột 3=fid/pid, Cột 4=mid
+            const parseRows = (rows, isSpouse = false) => {
+                return rows.slice(1).map(row => { // Bỏ qua hàng tiêu đề
+                    const id = String(row[0] || "").trim();
+                    if (!id) return null;
 
-            const clean = (obj) => {
-                let n = {};
-                for (let k in obj) n[k.toLowerCase().trim().replace(/\s/g, '_')] = obj[k];
-                return n;
+                    let node = {
+                        id: id,
+                        name: String(row[1] || "").trim() || "ID: " + id,
+                        gender: String(row[2] || "").toLowerCase().includes("f") ? "female" : "male"
+                    };
+
+                    if (isSpouse) {
+                        node.pids = [String(row[3] || "").trim()]; // pid ở cột D
+                    } else {
+                        node.fid = String(row[3] || "").trim() || null; // fid ở cột D
+                        node.mid = String(row[4] || "").trim() || null; // mid ở cột E
+                    }
+                    return node;
+                }).filter(n => n !== null);
             };
 
-            let members = res1.data.map(clean).filter(p => p.id);
-            let spouses = res2.data.map(clean).filter(p => p.id);
-            
-            log(`Nạp xong: ${members.length} người tộc, ${spouses.length} dâu/rể.`);
+            let nodesMembers = parseRows(res1.data, false);
+            let nodesSpouses = parseRows(res2.data, true);
 
-            // BƯỚC QUAN TRỌNG: MAI MỐI TỰ ĐỘNG
-            let spouseMap = {}; // Lưu danh sách vợ/chồng theo Partner ID (pid)
-            
-            let nodesSpouses = spouses.map(s => {
-                if (s.pid) {
-                    if (!spouseMap[s.pid]) spouseMap[s.pid] = [];
-                    spouseMap[s.pid].push(s.id);
+            // Tự động kết nối ngược từ Chồng sang Vợ (pids hai chiều)
+            let spouseLinks = {};
+            nodesSpouses.forEach(s => {
+                if (s.pids[0]) {
+                    if (!spouseLinks[s.pids[0]]) spouseLinks[s.pids[0]] = [];
+                    spouseLinks[s.pids[0]].push(s.id);
                 }
-                return {
-                    id: s.id,
-                    pids: s.pid ? [s.pid] : [],
-                    name: s.full_name || "Vô danh ("+s.id+")",
-                    gender: "female" // Mặc định dData là vợ, nếu là rể bạn hãy sửa trong Sheet
-                };
             });
 
-            let nodesMembers = members.map(m => {
-                // Nếu tìm thấy vợ ở sheet dData, thì gắn ID vợ vào pids của chồng
-                let mySpouses = spouseMap[m.id] || [];
-                return {
-                    id: m.id,
-                    fid: m.fid || null,
-                    mid: m.mid || null,
-                    pids: mySpouses,
-                    name: m.full_name || "Vô danh ("+m.id+")",
-                    gender: "male"
-                };
+            nodesMembers.forEach(m => {
+                if (spouseLinks[m.id]) m.pids = spouseLinks[m.id];
             });
-
-            const allNodes = [...nodesMembers, ...nodesSpouses];
-            log("Đang dựng cây sơ đồ...");
 
             new FamilyTree(document.getElementById("tree"), {
                 template: "tommy",
                 nodeBinding: { field_0: "name" },
-                nodes: allNodes
+                nodes: [...nodesMembers, ...nodesSpouses]
             });
 
-            log("HOÀN TẤT!");
-            setTimeout(() => document.getElementById('log').style.display='none', 5000);
-
-        } catch (e) {
-            log("LỖI: " + e.message);
-        }
+        } catch (e) { console.error(e); }
     }
     start();
 </script>
