@@ -2,8 +2,7 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V95</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <title>Gia Phả Lê Công - V96</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
@@ -15,57 +14,76 @@
 <div id="tree"></div>
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+    // Link CSV trực tiếp giúp tránh lỗi bảo mật và trắng màn hình
     const url1 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`; 
     const url2 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=1705210560`;
 
-    async function start() {
-        const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, header:true, skipEmptyLines:true, complete:r}));
+    async function fetchCSV(url) {
+        const response = await fetch(url);
+        const text = await response.text();
+        const rows = text.split('\n').map(row => row.split(','));
+        const headers = rows[0].map(h => h.trim().toLowerCase());
         
+        return rows.slice(1).map(row => {
+            let obj = {};
+            headers.forEach((h, i) => { if (row[i]) obj[h] = row[i].replace(/"/g, '').trim(); });
+            return obj;
+        });
+    }
+
+    async function start() {
         try {
-            const [res1, res2] = await Promise.all([fetchCSV(url1), fetchCSV(url2)]);
-            const s = (v) => v ? String(v).trim() : null;
+            const [data, dData] = await Promise.all([fetchCSV(url1), fetchCSV(url2)]);
 
-            // 1. Tạo bản đồ lưu trữ vợ (dData) để tí nữa gắn vào chồng (Data)
-            let partnersOf = {}; 
-            let spousesNodes = res2.data.map(row => {
-                const myId = s(row.id);
-                const husbandId = s(row.pid);
-                if (husbandId) {
-                    if (!partnersOf[husbandId]) partnersOf[husbandId] = [];
-                    partnersOf[husbandId].push(myId);
+            // 1. Tạo liên kết vợ chồng 2 chiều
+            let pidsMap = {};
+            dData.forEach(row => {
+                if (row.pid && row.id) {
+                    if (!pidsMap[row.pid]) pidsMap[row.pid] = [];
+                    pidsMap[row.pid].push(row.id);
                 }
-                return {
-                    id: myId,
-                    pids: [husbandId],
-                    name: row.full_name,
-                    gender: "female"
-                };
-            }).filter(n => n.id);
+            });
 
-            // 2. Tạo danh sách người trong tộc (Data)
-            let memberNodes = res1.data.map(row => {
-                const myId = s(row.id);
-                return {
-                    id: myId,
-                    fid: s(row.fid),
-                    mid: s(row.mid), // Cột mid này trỏ về ID của vợ bên dData (ví dụ 5001)
-                    pids: partnersOf[myId] || [], // Gắn vợ vào đây
-                    name: row.full_name,
-                    gender: (row.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                };
-            }).filter(n => n.id);
+            // 2. Chuẩn hóa dữ liệu cho Balkan
+            const nodes = [];
 
-            // 3. Gộp tất cả lại
-            const allNodes = [...memberNodes, ...spousesNodes];
+            // Thêm người từ bảng Data
+            data.forEach(m => {
+                if (m.id) {
+                    nodes.push({
+                        id: m.id,
+                        fid: m.fid || null,
+                        mid: m.mid || null,
+                        pids: pidsMap[m.id] || [],
+                        name: m.full_name || "Thành viên",
+                        gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    });
+                }
+            });
 
-            // 4. Vẽ cây
+            // Thêm dâu/rể từ bảng dData
+            dData.forEach(s => {
+                if (s.id) {
+                    nodes.push({
+                        id: s.id,
+                        pids: s.pid ? [s.pid] : [],
+                        name: s.full_name || "Vợ/Chồng",
+                        gender: (s.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    });
+                }
+            });
+
+            // 3. Vẽ cây
             new FamilyTree(document.getElementById("tree"), {
                 template: "hugo",
                 nodeBinding: { field_0: "name" },
-                nodes: allNodes
+                nodes: nodes
             });
 
-        } catch (e) { console.error("Lỗi: ", e); }
+        } catch (e) {
+            console.error("Lỗi:", e);
+            document.body.innerHTML = "<h3 style='padding:20px'>Lỗi nạp dữ liệu. Hãy kiểm tra quyền chia sẻ bảng tính!</h3>";
+        }
     }
     start();
 </script>
