@@ -2,12 +2,11 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V109</title>
+    <title>Gia Phả Lê Công - V110</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
         #tree { width: 100%; height: 100%; }
-        .bft-license-message { display: none !important; }
     </style>
 </head>
 <body>
@@ -17,65 +16,62 @@
 
         async function fetchSheet(gid) {
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-            const res = await fetch(url);
-            const text = await res.text();
-            const data = JSON.parse(text.substr(47).slice(0, -2));
-            const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
-            return data.table.rows.map(row => {
-                let obj = {};
-                row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
-                return obj;
-            });
+            try {
+                const res = await fetch(url);
+                const text = await res.text();
+                const data = JSON.parse(text.substr(47).slice(0, -2));
+                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                return data.table.rows.map(row => {
+                    let obj = {};
+                    row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
+                    return obj;
+                });
+            } catch (e) { return []; }
         }
 
         async function start() {
-            try {
-                // Load dữ liệu
-                const [data, dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
-                
-                let nodes = [];
-                let pidsMap = {};
+            const [data, dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
+            let nodes = [];
+            let pidsMap = {};
 
-                // 1. Xử lý dData: Tạo Node cho Tịnh Bà (5001), Bùi Thị Việt (5002)...
-                dData.forEach(s => {
-                    if (s.id) {
-                        nodes.push({
-                            id: s.id,
-                            pids: s.pid ? [s.pid] : [], // Kết nối với chồng (1 hoặc 2)
-                            name: s.full_name,
-                            gender: "female"
-                        });
-                        // Lưu lại để gắn vào chồng ở bước sau
-                        if (s.pid) {
-                            if (!pidsMap[s.pid]) pidsMap[s.pid] = [];
-                            pidsMap[s.pid].push(s.id);
-                        }
-                    }
-                });
+            // 1. Nạp vợ từ Sheets
+            dData.forEach(s => {
+                if (s.id) {
+                    nodes.push({ id: s.id, pids: [s.pid], name: s.full_name, gender: "female" });
+                    if (s.pid) { if (!pidsMap[s.pid]) pidsMap[s.pid] = []; pidsMap[s.pid].push(s.id); }
+                }
+            });
 
-                // 2. Xử lý Data: Tạo Node cho ông Mao (1), ông Nên (2)...
-                data.forEach(m => {
-                    if (m.id) {
-                        nodes.push({
-                            id: m.id,
-                            fid: (m.fid && m.fid !== "0") ? m.fid : null,
-                            mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                            pids: pidsMap[m.id] || [], // Tự động lấy ID vợ (5001, 5002) gắn vào
-                            name: m.full_name,
-                            gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                        });
-                    }
-                });
+            // 2. TỰ ĐỘNG CHÈN (Nếu thiếu dữ liệu trong Sheets)
+            if (!nodes.find(n => n.id == "5001")) {
+                nodes.push({ id: "5001", pids: ["1"], name: "Tịnh Bà", gender: "female" });
+                if (!pidsMap["1"]) pidsMap["1"] = []; pidsMap["1"].push("5001");
+            }
+            if (!nodes.find(n => n.id == "5002")) {
+                nodes.push({ id: "5002", pids: ["2"], name: "Bùi Thị Việt", gender: "female" });
+                if (!pidsMap["2"]) pidsMap["2"] = []; pidsMap["2"].push("5002");
+            }
 
-                // 3. Vẽ cây
-                new FamilyTree(document.getElementById("tree"), {
-                    template: "hugo",
-                    layout: FamilyTree.mixed,
-                    nodeBinding: { field_0: "name" },
-                    nodes: nodes
-                });
+            // 3. Nạp thành viên tộc
+            data.forEach(m => {
+                if (m.id) {
+                    nodes.push({
+                        id: m.id,
+                        fid: (m.fid && m.fid !== "0") ? m.fid : null,
+                        mid: (m.mid && m.mid !== "0") ? m.mid : (m.id == "2" ? "5001" : null), // Ép cụ Nên là con bà Tịnh
+                        pids: pidsMap[m.id] || [],
+                        name: m.full_name,
+                        gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    });
+                }
+            });
 
-            } catch (e) { console.error("Lỗi:", e); }
+            new FamilyTree(document.getElementById("tree"), {
+                template: "hugo",
+                layout: FamilyTree.mixed,
+                nodeBinding: { field_0: "name" },
+                nodes: nodes
+            });
         }
         start();
     </script>
