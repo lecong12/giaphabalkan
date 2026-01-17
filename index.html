@@ -2,11 +2,11 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V85 (Sửa lỗi đứt nhánh)</title>
+    <title>Gia Phả Lê Công - V86</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #222; }
         #tree { width: 100%; height: 100%; }
         .bft-license-message { display: none !important; }
     </style>
@@ -15,79 +15,64 @@
 <div id="tree"></div>
 <script>
     const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const urlData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`; 
-    const urldData = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=1705210560`;
+    // Link export chuẩn nhất của Google
+    const url1 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=0`; 
+    const url2 = `https://docs.google.com/spreadsheets/d/${ssId}/export?format=csv&gid=1705210560`;
 
     async function start() {
         const fetchCSV = (url) => new Promise(r => Papa.parse(url, {download:true, header:true, skipEmptyLines:true, complete:r}));
         
         try {
-            const [res1, res2] = await Promise.all([fetchCSV(urlData), fetchCSV(urldData)]);
+            const [res1, res2] = await Promise.all([fetchCSV(url1), fetchCSV(url2)]);
             
-            // Hàm chuẩn hóa ID (Bỏ mọi ký tự lạ, chỉ giữ số hoặc text sạch)
-            const cleanId = (val) => {
-                if (!val) return null;
-                return String(val).trim();
-            };
+            // Hàm chuẩn hóa ID cực mạnh (Xóa sạch mọi ký tự lạ, khoảng trắng)
+            const s = (val) => val ? String(val).trim() : null;
 
-            // Hàm xử lý tên cột không phân biệt hoa thường
-            const getVal = (row, keys) => {
-                for (let k in row) {
-                    if (keys.includes(k.toLowerCase().trim())) return row[k];
-                }
-                return null;
-            };
+            // Xử lý Sheet Data
+            let members = res1.data.map(row => {
+                const id = s(row.id || row.ID);
+                if (!id) return null;
+                return {
+                    id: id,
+                    fid: s(row.fid || row["ID Cha"]),
+                    mid: s(row.mid || row["ID Mẹ"]),
+                    name: row.full_name || row["Họ và tên"] || "Vô danh",
+                    gender: (row.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                };
+            }).filter(n => n !== null);
 
-            let members = res1.data.map(row => ({
-                id: cleanId(getVal(row, ['id'])),
-                fid: cleanId(getVal(row, ['fid', 'id cha'])),
-                mid: cleanId(getVal(row, ['mid', 'id mẹ'])),
-                name: getVal(row, ['full_name', 'họ và tên']),
-                gender: (getVal(row, ['gender', 'giới tính']) || "").toLowerCase().includes('f') ? "female" : "male"
-            })).filter(n => n.id);
+            // Xử lý Sheet dData
+            let spouses = res2.data.map(row => {
+                const id = s(row.id || row.ID);
+                const pid = s(row.pid || row["ID Vợ/Chồng"]);
+                if (!id) return null;
+                return {
+                    id: id,
+                    pids: pid ? [pid] : [],
+                    name: row.full_name || row["Họ và tên"] || "Vô danh",
+                    gender: (row.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                };
+            }).filter(n => n !== null);
 
-            let spouses = res2.data.map(row => ({
-                id: cleanId(getVal(row, ['id'])),
-                pid: cleanId(getVal(row, ['pid', 'id vợ/chồng', 'id_vợ/chồng'])),
-                name: getVal(row, ['full_name', 'họ và tên']),
-                gender: (getVal(row, ['gender', 'giới tính']) || "").toLowerCase().includes('f') ? "female" : "male"
-            })).filter(n => n.id);
+            // Gộp dữ liệu
+            const nodes = [...members, ...spouses];
 
-            // Xử lý pids hai chiều cho Balkan
-            let partnerMap = {};
-            spouses.forEach(s => {
-                if (s.pid) {
-                    if (!partnerMap[s.pid]) partnerMap[s.pid] = [];
-                    partnerMap[s.pid].push(s.id);
-                }
+            // Kiểm tra tính nhất quán: Xóa các fid/mid nếu ID đó không tồn tại
+            const allIds = new Set(nodes.map(n => n.id));
+            nodes.forEach(n => {
+                if (n.fid && !allIds.has(n.fid)) n.fid = null;
+                if (n.mid && !allIds.has(n.mid)) n.mid = null;
+                if (n.pids) n.pids = n.pids.filter(p => allIds.has(p));
             });
 
-            const allNodes = [
-                ...members.map(m => ({
-                    id: m.id,
-                    fid: m.fid,
-                    mid: m.mid,
-                    pids: partnerMap[m.id] || [],
-                    name: m.name,
-                    gender: m.gender
-                })),
-                ...spouses.map(s => ({
-                    id: s.id,
-                    pids: [s.pid],
-                    name: s.name,
-                    gender: s.gender
-                }))
-            ];
-
             new FamilyTree(document.getElementById("tree"), {
-                mouseWheel: { zoom: true },
                 template: "hugo",
                 layout: FamilyTree.mixed,
                 nodeBinding: { field_0: "name" },
-                nodes: allNodes
+                nodes: nodes
             });
 
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Lỗi:", e); }
     }
     start();
 </script>
