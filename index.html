@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V106 (Hiện Bà Vợ)</title>
+    <title>Gia Phả Lê Công - V107</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
@@ -16,71 +16,71 @@
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
         async function fetchSheet(gid) {
-            const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-            const res = await fetch(url);
-            const text = await res.text();
-            const data = JSON.parse(text.substr(47).slice(0, -2));
-            const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
-            return data.table.rows.map(row => {
-                let obj = {};
-                row.c.forEach((cell, i) => { 
-                    if (cols[i]) {
-                        let val = cell ? cell.v : null;
-                        obj[cols[i]] = val !== null ? String(val).trim() : null;
-                    }
+            try {
+                const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                const res = await fetch(url);
+                const text = await res.text();
+                const data = JSON.parse(text.substr(47).slice(0, -2));
+                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                return data.table.rows.map(row => {
+                    let obj = {};
+                    row.c.forEach((cell, i) => { 
+                        if (cols[i]) {
+                            let val = cell ? cell.v : null;
+                            obj[cols[i]] = val !== null ? String(val).trim() : null;
+                        }
+                    });
+                    return obj;
                 });
-                return obj;
-            });
+            } catch (e) { return []; } // Nếu lỗi sheet thì trả về mảng rỗng
         }
 
         async function start() {
-            try {
-                // Tải dữ liệu từ 2 bảng
-                const [membersData, spousesData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
-                
-                let nodes = [];
-                let spouseMap = {}; // Để lưu danh sách vợ của từng ông chồng
+            // Tải dữ liệu (Sheet Data: 0, Sheet dData: 1705210560)
+            const [members, spouses] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
+            
+            let nodes = [];
+            let spouseMap = {};
 
-                // 1. Xử lý bảng dData trước để lấy danh sách vợ
-                spousesData.forEach(s => {
-                    if (s.id && s.pid) {
-                        // Lưu mối quan hệ: ID chồng -> danh sách ID vợ
-                        if (!spouseMap[s.pid]) spouseMap[s.pid] = [];
-                        spouseMap[s.pid].push(s.id);
-                        
-                        // Đưa bà vợ vào danh sách node
-                        nodes.push({
-                            id: s.id,
-                            pids: [s.pid], // Vợ gọi ID chồng
-                            name: s.full_name || "Bà (Chưa rõ tên)",
-                            gender: "female"
-                        });
-                    }
-                });
+            // 1. Thu thập dữ liệu vợ từ sheet dData (nếu có)
+            spouses.forEach(s => {
+                if (s.id && s.pid) {
+                    if (!spouseMap[s.pid]) spouseMap[s.pid] = [];
+                    spouseMap[s.pid].push(s.id);
+                    nodes.push({
+                        id: s.id,
+                        pids: [s.pid],
+                        name: s.full_name || "Bà",
+                        gender: "female"
+                    });
+                }
+            });
 
-                // 2. Xử lý bảng Data (Thành viên tộc)
-                membersData.forEach(m => {
-                    if (m.id) {
-                        nodes.push({
-                            id: m.id,
-                            fid: m.fid || null,
-                            mid: m.mid || null,
-                            pids: spouseMap[m.id] || [], // Chồng gọi danh sách ID vợ
-                            name: m.full_name,
-                            gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                        });
-                    }
-                });
+            // 2. Thu thập dữ liệu thành viên từ sheet Data
+            members.forEach(m => {
+                if (m.id) {
+                    nodes.push({
+                        id: m.id,
+                        fid: (m.fid && m.fid !== "0") ? m.fid : null,
+                        mid: (m.mid && m.mid !== "0") ? m.mid : null,
+                        pids: spouseMap[m.id] || [],
+                        name: m.full_name || "Vô danh",
+                        gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                    });
+                }
+            });
 
-                // 3. Vẽ cây
+            // 3. Hiển thị cây (Nếu nodes trống sẽ không bị lỗi màn hình trắng)
+            if (nodes.length > 0) {
                 new FamilyTree(document.getElementById("tree"), {
                     template: "hugo",
                     layout: FamilyTree.mixed,
                     nodeBinding: { field_0: "name" },
                     nodes: nodes
                 });
-
-            } catch (e) { console.error("Lỗi:", e); }
+            } else {
+                document.body.innerHTML = "<h3>Đang tải hoặc không tìm thấy dữ liệu. Kiểm tra lại ID Sheet.</h3>";
+            }
         }
         start();
     </script>
