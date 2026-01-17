@@ -2,79 +2,76 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cây Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Hệ Thống Trực Tuyến</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f0f2f5; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
-        
-        /* CỰC KỲ QUAN TRỌNG: Ẩn các bảng thông báo giới hạn của Balkan */
-        .bft-license-message, [id*="balkan-license"], .bft-search-not-found {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-        }
+        .bft-license-message { display: none !important; }
+        #status { position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; z-index: 1000; }
     </style>
 </head>
 <body>
 
+<div id="status">Đang nạp dữ liệu từ Google Sheets...</div>
 <div id="tree"></div>
 
 <script>
-    // Link Google Sheets mới của bạn
-    const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv`;
+    // 1. THAY ĐỔI QUAN TRỌNG: Dùng link export trực tiếp thay vì link gviz
+    const sheetID = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+    const finalUrl = `https://docs.google.com/spreadsheets/d/${sheetID}/export?format=csv&gid=1705210560`;
 
-    async function init() {
-        try {
-            const response = await fetch(csvUrl);
-            const text = await response.text();
-            const lines = text.split('\n');
-            
-            // Lấy tiêu đề và xử lý các cột (ID, Họ và tên, fid, id_Cha/Mẹ...)
-            const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-            
-            const nodes = lines.slice(1).map(line => {
-                const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-                let p = {};
-                headers.forEach((h, i) => {
-                    p[h] = (cols[i] || "").replace(/^"|"$/g, '').trim();
+    async function start() {
+        Papa.parse(finalUrl, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                console.log("Dữ liệu nhận được:", data[0]); // Kiểm tra dòng đầu tiên trong Console
+
+                const nodes = data.map(row => {
+                    // Tự động khớp tên cột dù bạn đặt là "ID" hay "idHọ và tên"
+                    const id = row["ID"] || row["idHọ và tên"] || row["id"];
+                    if (!id) return null;
+
+                    return {
+                        id: id,
+                        fid: row["ID Cha"] || row["fid"] || row["id_Cha"] || null,
+                        mid: row["ID Mẹ"] || row["id_Mẹ"] || row["id_Cha/Mẹ"] || null,
+                        name: row["Họ và tên"] || "Vô danh",
+                        gender: (row["Giới tính"] || "").toLowerCase().includes("nữ") ? "female" : "male",
+                        address: row["Địa chỉ"] || row["Quê quán"] || ""
+                    };
+                }).filter(n => n !== null);
+
+                if (nodes.length === 0) {
+                    document.getElementById('status').innerText = "Lỗi: Không đọc được dữ liệu cột!";
+                    return;
+                }
+
+                document.getElementById('status').innerText = "Đã nạp " + nodes.length + " thành viên.";
+
+                // Vẽ sơ đồ
+                const family = new FamilyTree(document.getElementById("tree"), {
+                    mouseWheel: { zoom: true },
+                    template: "tommy",
+                    enableSearch: true,
+                    nodeBinding: {
+                        field_0: "name",
+                        field_1: "address"
+                    },
+                    nodes: nodes
                 });
-
-                const id = p["ID"] || p["idHọ và tên"];
-                if (!id) return null;
-
-                return {
-                    id: id,
-                    fid: p["ID Cha"] || p["fid"] || null,
-                    mid: p["ID Mẹ"] || p["id_Cha/Mẹ"] || null,
-                    name: p["Họ và tên"] || "Vô danh",
-                    gender: (p["Giới tính"] || p["gender"] || "").toLowerCase().includes("nữ") ? "female" : "male",
-                    title: p["Địa chỉ"] || p["Ghi chú"] || ""
-                };
-            }).filter(n => n !== null);
-
-            // Cấu hình hiển thị tối ưu cho dữ liệu lớn
-            const family = new FamilyTree(document.getElementById("tree"), {
-                mouseWheel: { zoom: true },
-                template: "tommy",
-                enableSearch: true,
-                layout: FamilyTree.mixed, // Tự động sắp xếp tối ưu diện tích
-                nodeBinding: {
-                    field_0: "name",
-                    field_1: "title"
-                },
-                nodes: nodes
-            });
-
-        } catch (e) {
-            console.error("Lỗi nạp dữ liệu: ", e);
-        }
+            },
+            error: function(err) {
+                document.getElementById('status').innerText = "Lỗi kết nối tới Google Sheets!";
+            }
+        });
     }
 
-    init();
+    start();
 </script>
 </body>
 </html>
