@@ -2,80 +2,63 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Hệ Thống Vĩnh Viễn</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <title>Gia Phả Lê Công - Bản V66</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.css">
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f0f2f5; font-family: sans-serif; }
-        svg { width: 100%; height: 100%; cursor: grab; }
-        .node circle { fill: #fff; stroke: #007bff; stroke-width: 2px; }
-        .node text { font-size: 12px; font-weight: bold; fill: #333; }
-        .link { fill: none; stroke: #ccc; stroke-width: 2px; }
-        #controls { position: fixed; bottom: 20px; left: 20px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        html, body { width: 100%; height: 100%; margin: 0; background: #fff; }
+        .chart { height: 100%; width: 100%; }
+        .node { padding: 10px; border: 2px solid #007bff; border-radius: 5px; background: #f9f9f9; width: 150px; }
+        .node p { margin: 0; font-size: 12px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="controls">Dùng chuột để kéo, cuộn để phóng to/thu nhỏ</div>
-    <svg id="tree-container"></svg>
+    <div class="chart" id="tree-simple"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/treant-js/1.0/Treant.min.js"></script>
 
     <script>
         const SHEET_ID = '19ON0r9hn0Z6VcuM9oeeKyaCP863tkZlqeV3Si3v25KE';
-        const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
+        const URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Data`;
 
         async function init() {
             try {
-                const res = await fetch(SHEET_URL);
+                const res = await fetch(URL);
                 const text = await res.text();
                 const lines = text.split('\n').slice(1);
                 
-                const rawData = lines.map(line => {
+                const nodesMap = {};
+                const treeData = { chart: { container: "#tree-simple", connecters: { type: "step" } }, nodeStructure: null };
+
+                const rawNodes = lines.map(line => {
                     const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                    const id = cols[0]?.replace(/"/g, "").trim();
+                    const fid = cols[1]?.replace(/"/g, "").trim();
                     return {
-                        id: cols[0]?.replace(/"/g, "").trim(),
-                        parentId: cols[1]?.replace(/"/g, "").trim() === "0" ? null : cols[1]?.replace(/"/g, "").trim(),
-                        name: cols[3]?.replace(/"/g, "").trim() || "Chưa rõ tên"
+                        id: id,
+                        parentId: (fid === "0" || fid === "") ? null : fid,
+                        text: { name: cols[3]?.replace(/"/g, "").trim() || "Chưa rõ" }
                     };
-                }).filter(d => d.id);
+                }).filter(n => n.id);
 
-                // Chuyển dữ liệu phẳng sang dạng cây
-                const dataStructure = d3.stratify()
-                    .id(d => d.id)
-                    .parentId(d => d.parentId)(rawData);
+                // Tạo Map để truy xuất nhanh
+                rawNodes.forEach(n => { nodesMap[n.id] = { ...n, children: [] }; });
 
-                const width = window.innerWidth;
-                const height = window.innerHeight;
-                const svg = d3.select("#tree-container")
-                    .call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)));
+                let root = null;
+                rawNodes.forEach(n => {
+                    if (n.parentId && nodesMap[n.parentId]) {
+                        nodesMap[n.parentId].children.push(nodesMap[n.id]);
+                    } else if (!root) {
+                        root = nodesMap[n.id]; // Lấy người đầu tiên không cha làm gốc
+                    }
+                });
 
-                const g = svg.append("g");
-                const tree = d3.tree().nodeSize([150, 250]);
-                const root = tree(dataStructure);
+                treeData.nodeStructure = root;
+                new Treant(treeData);
 
-                // Vẽ các đường nối
-                g.append("g")
-                    .attr("class", "links")
-                    .selectAll("path")
-                    .data(root.links())
-                    .join("path")
-                    .attr("class", "link")
-                    .attr("d", d3.linkHorizontal().x(d => d.y).y(d => d.x));
-
-                // Vẽ các nút
-                const node = g.append("g")
-                    .selectAll("g")
-                    .data(root.descendants())
-                    .join("g")
-                    .attr("transform", d => `translate(${d.y},${d.x})`);
-
-                node.append("circle").attr("r", 6);
-                node.append("text")
-                    .attr("dy", "0.31em")
-                    .attr("x", d => d.children ? -10 : 10)
-                    .attr("text-anchor", d => d.children ? "end" : "start")
-                    .text(d => d.data.name);
-
-            } catch (err) {
-                console.error(err);
-                alert("Lỗi dữ liệu: Hãy kiểm tra xem ID cha có tồn tại không.");
+            } catch (e) {
+                console.error(e);
+                document.body.innerHTML = "Có lỗi xảy ra khi xử lý dữ liệu. Kiểm tra bảng tính.";
             }
         }
         init();
