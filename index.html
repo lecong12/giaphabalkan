@@ -95,8 +95,36 @@
                 // Kích hoạt thanh tìm kiếm
                 searchFields: ["name"], 
                 nodeBinding: { field_0: "name" },
-                nodes: nodes
+                // nodes: nodes // Tắt load toàn bộ để tránh giới hạn 200 nodes
             });
+
+            // --- Bắt đầu: Xử lý Lazy Loading (Tải từng phần) ---
+            // Hàm kiểm tra node đã hiển thị chưa
+            const isLoaded = (id) => family.get(id) !== undefined;
+
+            // Sự kiện click vào node để tải thêm con cái
+            family.on('click', function (sender, args) {
+                const id = args.node.id;
+                // Tìm các con trong dữ liệu gốc
+                const children = nodes.filter(n => n.fid == id || n.mid == id);
+                // Lọc ra những người chưa hiển thị
+                let toAdd = children.filter(c => !isLoaded(c.id));
+                // Tìm thêm vợ/chồng của những người mới này (để hiển thị đúng mối quan hệ)
+                const childIds = toAdd.map(c => c.id);
+                const partners = nodes.filter(n => n.pids && n.pids.some(pid => childIds.includes(pid)) && !isLoaded(n.id));
+                
+                const finalToAdd = [...toAdd, ...partners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
+                if (finalToAdd.length > 0) family.add(finalToAdd);
+            });
+
+            // Load lần đầu: Chỉ load các cụ Tổ (không có bố mẹ) và vợ/chồng
+            const roots = nodes.filter(n => !n.fid && !n.mid);
+            const rootIds = roots.map(r => r.id);
+            const rootPartners = nodes.filter(n => n.pids && n.pids.some(pid => rootIds.includes(pid)));
+            const initialData = [...roots, ...rootPartners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
+            
+            family.load(initialData);
+            // --- Kết thúc: Xử lý Lazy Loading ---
 
             // Cấu hình: Khi tìm thấy, tự động nhảy đến và phóng to
             family.on('search-click', function (sender, nodeId) {
