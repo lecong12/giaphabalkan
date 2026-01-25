@@ -1,26 +1,22 @@
-const express = require('express');
+const http = require('http');
+const fs = require('fs');
 const path = require('path');
-const app = express();
 
-// Lấy Port từ môi trường Railway (quan trọng), nếu không có thì dùng 3000
 const port = process.env.PORT || 3000;
 
-console.log("Đang khởi động ứng dụng...");
-console.log("Thư mục hiện tại:", __dirname);
-
-// Phục vụ các file tĩnh (HTML, CSS, JS) trong thư mục hiện tại
-app.use(express.static(__dirname));
-
-// Luôn trả về index.html
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+const server = http.createServer((req, res) => {
+    // Đọc file index.html và trả về cho mọi yêu cầu
+    fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
+        if (err) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end('Lỗi Server: Không tìm thấy file index.html');
+        } else {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(content, 'utf-8');
+        }
+    });
 });
 
-const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`Server đã khởi động xong trên port ${port}`);
-});
-
-// Bắt lỗi nếu không khởi động được (ví dụ trùng port)
-server.on('error', (e) => {
-    console.error("LỖI KHỞI ĐỘNG SERVER:", e);
+server.listen(port, '0.0.0.0', () => {
+    console.log(`Server siêu nhẹ đã chạy tại port ${port}`);
 });
