@@ -27,6 +27,14 @@
 
         #tree { width: 100%; height: calc(100% - 80px); }
         .bft-license-message { display: none !important; }
+        
+        /* Loading Spinner: Hiển thị khi đang tải dữ liệu */
+        #loading {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 18px; color: #555; background: rgba(255,255,255,0.95);
+            padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000; font-weight: bold; border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
@@ -34,6 +42,7 @@
         <h1>Gia Phả Họ Lê Công</h1>
         <p>Hệ thống tìm kiếm thành viên thông minh</p>
     </div>
+    <div id="loading">Đang kết nối dữ liệu Google Sheets...</div>
     <div id="tree"></div>
 
     <script>
@@ -140,6 +149,9 @@
                 console.warn("Không tìm thấy node gốc nào để hiển thị. Kiểm tra lại dữ liệu fid/mid.");
                 alert("Cảnh báo: Không tìm thấy thành viên gốc (Ông Tổ) nào để hiển thị. Vui lòng kiểm tra cột fid/mid trong file Google Sheets.");
             }
+
+            // Tắt thông báo loading khi đã có dữ liệu
+            document.getElementById("loading").style.display = "none";
 
             family.load(initialData);
             // --- Kết thúc: Xử lý Lazy Loading ---
