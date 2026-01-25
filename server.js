@@ -13,6 +13,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Server đang chạy trên port ${port}`);
+app.listen(port, '0.0.0.0', (err) => {
+    if (err) console.error("Lỗi khởi động server:", err);
+    console.log(`Server đã sẵn sàng tại http://0.0.0.0:${port}`);
 });
