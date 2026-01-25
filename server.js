@@ -1,22 +1,23 @@
-const http = require('http');
-const fs = require('fs');
+const express = require('express');
 const path = require('path');
+const app = express();
 
 const port = process.env.PORT || 3000;
 
-const server = http.createServer((req, res) => {
-    // Đọc file index.html và trả về cho mọi yêu cầu
-    fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
-        if (err) {
-            res.writeHead(500, { 'Content-Type': 'text/plain' });
-            res.end('Lỗi Server: Không tìm thấy file index.html');
-        } else {
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(content, 'utf-8');
-        }
-    });
+// 1. Phục vụ các file tĩnh (CSS, JS, Images, v.v.) từ thư mục hiện tại
+// Điều này giúp các file trong thư mục con cũng có thể truy cập được
+app.use(express.static(__dirname));
+
+// 2. Route chính: Trả về index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-server.listen(port, '0.0.0.0', () => {
-    console.log(`Server siêu nhẹ đã chạy tại port ${port}`);
+// 3. Fallback: Nếu truy cập đường dẫn lạ, vẫn trả về index.html (Hỗ trợ SPA)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server Express đã chạy tại http://0.0.0.0:${port}`);
 });
