@@ -2,9 +2,9 @@
   "name": "giapha-balkan",
   "version": "1.0.0",
   "scripts": {
-    "start": "serve -s ."
+    "start": "node server.js"
   },
   "dependencies": {
-    "serve": "^14.2.1"
+    "express": "^4.18.2"
   }
 }
