@@ -16,10 +16,11 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(port, '0.0.0.0', (err) => {
-    if (err) {
-        console.error("Không thể khởi động server:", err);
-        return;
-    }
-    console.log(`Server đã chạy thành công tại http://0.0.0.0:${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`Server đã khởi động xong trên port ${port}`);
+});
+
+// Bắt lỗi nếu không khởi động được (ví dụ trùng port)
+server.on('error', (e) => {
+    console.error("LỖI KHỞI ĐỘNG SERVER:", e);
 });
