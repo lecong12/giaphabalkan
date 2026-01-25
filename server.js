@@ -5,15 +5,17 @@ const app = express();
 // Lấy Port từ môi trường Railway (quan trọng), nếu không có thì dùng 3000
 const port = process.env.PORT || 3000;
 
+// Log ngay khi bắt đầu để biết app có chạy không
+console.log(`Đang khởi động server... Port dự kiến: ${port}`);
+
 // Phục vụ các file tĩnh (HTML, CSS, JS) trong thư mục hiện tại
-app.use(express.static(path.join(__dirname, '.')));
+app.use(express.static(path.join(__dirname)));
 
 // Luôn trả về index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(port, '0.0.0.0', (err) => {
-    if (err) console.error("Lỗi khởi động server:", err);
-    console.log(`Server đã sẵn sàng tại http://0.0.0.0:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server đã chạy thành công tại http://0.0.0.0:${port}`);
 });
