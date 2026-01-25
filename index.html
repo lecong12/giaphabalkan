@@ -43,15 +43,23 @@
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
             try {
                 const res = await fetch(url);
+                if (!res.ok) throw new Error(`Lỗi kết nối Google Sheets: ${res.status}`);
                 const text = await res.text();
-                const data = JSON.parse(text.substr(47).slice(0, -2));
+                // Dùng Regex để lấy JSON an toàn hơn, tránh lỗi khi Google trả về HTML báo lỗi (502)
+                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);/);
+                if (!jsonMatch) throw new Error("Dữ liệu trả về không đúng định dạng JSON");
+                const data = JSON.parse(jsonMatch[1]);
+                
                 const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
                 return data.table.rows.map(row => {
                     let obj = {};
                     row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
                     return obj;
                 });
-            } catch (e) { return []; }
+            } catch (e) { 
+                console.error("Lỗi tải dữ liệu (GID " + gid + "):", e);
+                return []; 
+            }
         }
 
         async function start() {
@@ -119,10 +127,18 @@
 
             // Load lần đầu: Chỉ load các cụ Tổ (không có bố mẹ) và vợ/chồng
             const roots = nodes.filter(n => !n.fid && !n.mid);
-            const rootIds = roots.map(r => r.id);
-            const rootPartners = nodes.filter(n => n.pids && n.pids.some(pid => rootIds.includes(pid)));
-            const initialData = [...roots, ...rootPartners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
             
+            // Giới hạn số lượng root ban đầu (ví dụ 30) để đảm bảo không bao giờ vượt quá 200 node khi cộng thêm vợ/chồng
+            const limitedRoots = roots.slice(0, 30);
+            
+            const rootIds = limitedRoots.map(r => r.id);
+            const rootPartners = nodes.filter(n => n.pids && n.pids.some(pid => rootIds.includes(pid)));
+            const initialData = [...limitedRoots, ...rootPartners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
+            
+            if (nodes.length > 0 && initialData.length === 0) {
+                console.warn("Không tìm thấy node gốc nào để hiển thị. Kiểm tra lại dữ liệu fid/mid.");
+            }
+
             family.load(initialData);
             // --- Kết thúc: Xử lý Lazy Loading ---
 
