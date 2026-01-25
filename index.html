@@ -50,26 +50,34 @@
 
         async function fetchSheet(gid) {
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error(`Lỗi kết nối Google Sheets: ${res.status}`);
-                const text = await res.text();
-                // Dùng Regex để lấy JSON an toàn hơn, tránh lỗi khi Google trả về HTML báo lỗi (502)
-                // Cập nhật Regex linh hoạt hơn: không bắt buộc dấu chấm phẩy cuối cùng
-                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
-                if (!jsonMatch) throw new Error("Dữ liệu trả về không đúng định dạng JSON");
-                const data = JSON.parse(jsonMatch[1]);
-                
-                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
-                return data.table.rows.map(row => {
-                    let obj = {};
-                    row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
-                    return obj;
-                });
-            } catch (e) { 
-                console.error("Lỗi tải dữ liệu (GID " + gid + "):", e);
-                return []; 
+            // Thử lại tối đa 3 lần nếu gặp lỗi 502 hoặc lỗi mạng
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error(`Lỗi kết nối Google Sheets: ${res.status}`);
+                    const text = await res.text();
+                    
+                    // Dùng Regex để lấy JSON an toàn hơn
+                    const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
+                    if (!jsonMatch) throw new Error("Dữ liệu trả về không đúng định dạng JSON");
+                    const data = JSON.parse(jsonMatch[1]);
+                    
+                    const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                    return data.table.rows.map(row => {
+                        let obj = {};
+                        row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
+                        return obj;
+                    });
+                } catch (e) { 
+                    console.warn(`Lần thử ${i+1} thất bại (GID ${gid}):`, e);
+                    if (i === 2) {
+                        console.error("Không thể tải dữ liệu sau 3 lần thử.");
+                        return []; 
+                    }
+                    await new Promise(r => setTimeout(r, 1500)); // Đợi 1.5s trước khi thử lại
+                }
             }
+            return [];
         }
 
         async function start() {
