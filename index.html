@@ -46,7 +46,8 @@
                 if (!res.ok) throw new Error(`Lỗi kết nối Google Sheets: ${res.status}`);
                 const text = await res.text();
                 // Dùng Regex để lấy JSON an toàn hơn, tránh lỗi khi Google trả về HTML báo lỗi (502)
-                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);/);
+                // Cập nhật Regex linh hoạt hơn: không bắt buộc dấu chấm phẩy cuối cùng
+                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
                 if (!jsonMatch) throw new Error("Dữ liệu trả về không đúng định dạng JSON");
                 const data = JSON.parse(jsonMatch[1]);
                 
@@ -137,6 +138,7 @@
             
             if (nodes.length > 0 && initialData.length === 0) {
                 console.warn("Không tìm thấy node gốc nào để hiển thị. Kiểm tra lại dữ liệu fid/mid.");
+                alert("Cảnh báo: Không tìm thấy thành viên gốc (Ông Tổ) nào để hiển thị. Vui lòng kiểm tra cột fid/mid trong file Google Sheets.");
             }
 
             family.load(initialData);
