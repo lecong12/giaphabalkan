@@ -10,10 +10,14 @@ app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
-// 2. Phục vụ các file tĩnh
+// 2. Xử lý Favicon: Trả về 204 No Content để tránh lỗi 404/502
+// Trình duyệt luôn tự động tìm file này, nếu không xử lý server sẽ tốn tài nguyên vô ích.
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// 3. Phục vụ các file tĩnh
 app.use(express.static(__dirname));
 
-// 3. Fallback route cho Single Page Application (SPA)
+// 4. Fallback route cho Single Page Application (SPA)
 // Mọi request không khớp với một file tĩnh sẽ được chuyển hướng về index.html.
 // Router phía client (ví dụ: React Router, Vue Router) sẽ xử lý đường dẫn chi tiết.
 app.get('*', (req, res) => {
