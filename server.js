@@ -14,7 +14,12 @@ app.use(express.static(__dirname));
 // Router phía client (ví dụ: React Router, Vue Router) sẽ xử lý đường dẫn chi tiết.
 app.get('*', (req, res) => {
     // Đảm bảo rằng index.html nằm trong thư mục 'public'
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'), (err) => {
+        if (err) {
+            console.error("Lỗi khi gửi file index.html:", err);
+            res.status(500).send("Lỗi Server: Không tìm thấy file index.html. Vui lòng kiểm tra lại quá trình deploy.");
+        }
+    });
 });
 
 app.listen(port, '0.0.0.0', () => {
