@@ -26,7 +26,12 @@ app.get('*', (req, res) => {
     });
 });
 
-app.listen(port, '0.0.0.0', () => {
+const server = app.listen(port, '0.0.0.0', () => {
     console.log(`Server đang chạy tại http://localhost:${port}`);
     console.log(`Cũng có thể truy cập từ các thiết bị khác trong cùng mạng qua địa chỉ IP của máy.`);
+});
+
+// Bắt lỗi nếu server không thể khởi động (ví dụ: lỗi Port)
+server.on('error', (e) => {
+    console.error("LỖI KHỞI ĐỘNG SERVER:", e);
 });
