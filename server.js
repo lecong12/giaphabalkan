@@ -1,3 +1,14 @@
+// --- BẮT ĐẦU ĐOẠN CODE DEBUG ---
+// Thêm đoạn này lên CỰC TRÊN CÙNG của file để bắt mọi lỗi crash
+console.log(">>> Đang khởi động server...");
+process.on('uncaughtException', (err) => {
+    console.error('>>> LỖI NGHIÊM TRỌNG (Uncaught Exception):', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('>>> LỖI PROMISE (Unhandled Rejection):', reason);
+});
+// --- KẾT THÚC ĐOẠN CODE DEBUG ---
+
 const express = require('express');
 const path = require('path');
 const app = express();
