@@ -2,83 +2,110 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Bản Chuẩn Hóa</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f7f6; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 20px; border: 1px solid #b30000; text-align: center; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 25px; border-radius: 12px; border: 2px solid #b30000; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
-    <div id="loading">Đang kết nối dữ liệu trực tiếp...</div>
+    <div id="loading">Đang chuẩn hóa dữ liệu gia phả...<br><small>Vui lòng đợi trong giây lát</small></div>
     <div id="tree"></div>
 
     <script>
-        // Cấu hình ID Sheet của bạn
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
         async function start() {
             try {
-                // 1. Hàm lấy dữ liệu thô cực kỳ đơn giản
-                const fetchRaw = async (gid) => {
-                    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                const fetchSheet = async (gid) => {
+                    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                    const res = await fetch(url);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    return json.table.rows;
+                    
+                    // Lấy dữ liệu thô và ép kiểu String an toàn cho từng ô
+                    return json.table.rows.map(row => {
+                        return row.c.map(cell => {
+                            if (!cell || cell.v === null) return "";
+                            return String(cell.v).trim(); // Ép mọi thứ về String
+                        });
+                    });
                 };
 
-                // Tải song song 2 sheet
-                const [dataRows, dDataRows] = await Promise.all([fetchRaw('0'), fetchRaw('1705210560')]);
+                // Tải dữ liệu từ 2 Sheet
+                const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                let nodes = [];
-                let partnerMap = {};
+                let nodesMap = {};
+                let partnerMap = {}; 
 
-                // 2. Xử lý Phối ngẫu (Sheet dData) trước để lấy pids
-                dDataRows.forEach(row => {
-                    const c = row.c;
-                    const id = c ? String(c.v) : null;
-                    const pid = c ? String(c.v) : null;
-                    const name = c ? String(c.v) : (c ? String(c.v) : "Phối ngẫu");
-                    
+                // 1. Xử lý Sheet dData (Vợ/Chồng) - PID là ID của chồng ở sheet Data
+                dDataRows.forEach((r, index) => {
+                    if (index === 0) return; // Bỏ qua dòng tiêu đề
+                    let id = r;   // Cột A: ID người phối ngẫu
+                    let pid = r;  // Cột B: PID (ID của chồng/vợ trong dòng tộc)
+                    let name = r || r || "Phối ngẫu"; 
+
                     if (id && pid) {
-                        nodes.push({ id: id, pids: [pid], name: name, gender: "female" });
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
-                    }
-                });
 
-                // 3. Xử lý Huyết thống (Sheet Data)
-                dataRows.forEach(row => {
-                    const c = row.c;
-                    const id = c ? String(c.v) : null;
-                    if (id && id !== "id") {
-                        nodes.push({
+                        nodesMap[id] = {
                             id: id,
-                            fid: (c && c.v != 0) ? String(c.v) : null,
-                            mid: (c && c.v != 0) ? String(c.v) : null,
-                            pids: partnerMap[id] || [],
-                            name: c ? String(c.v) : (c ? String(c.v) : "Thành viên"),
-                            gender: (c && String(c.v).toLowerCase().includes('f')) ? "female" : "male"
-                        });
+                            pids: [pid],
+                            name: name,
+                            gender: "female"
+                        };
                     }
                 });
 
-                // 4. Lách luật 200 nodes: Chỉ lấy 180 người đầu
-                const finalNodes = nodes.slice(0, 185);
+                // 2. Xử lý Sheet Data (Huyết thống)
+                dataRows.forEach((r, index) => {
+                    if (index === 0) return; // Bỏ qua dòng tiêu đề
+                    let id = r;   
+                    if (id) {
+                        // Kiểm tra giới tính an toàn sau khi đã ép kiểu String
+                        let genderValue = (r || "").toLowerCase();
+                        let isFemale = genderValue.includes('f') || genderValue.includes('nữ');
+
+                        nodesMap[id] = {
+                            id: id,
+                            fid: (r && r !== "0") ? r : null,
+                            mid: (r && r !== "0") ? r : null,
+                            pids: partnerMap[id] || [], // Gắn ID vợ từ dData vào pids của chồng
+                            name: r || "Thành viên",
+                            gender: isFemale ? "female" : "male"
+                        };
+                    }
+                });
+
+                let allNodes = Object.values(nodesMap);
+                allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
+                
+                // GIỚI HẠN 185 NGƯỜI ĐỂ TRÁNH LỖI 200 NODES CỦA BALKAN
+                const finalNodes = allNodes.slice(0, 185);
 
                 document.getElementById("loading").style.display = "none";
 
-                // Khởi tạo cây
+                if (finalNodes.length === 0) {
+                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu hợp lệ.";
+                    return;
+                }
+
                 new FamilyTree(document.getElementById("tree"), {
+                    mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    nodeBinding: { field_0: "name", field_1: "id" },
+                    nodeBinding: { 
+                        field_0: "name", 
+                        field_1: "id" 
+                    },
                     nodes: finalNodes
                 });
 
             } catch (e) {
-                document.getElementById("loading").innerHTML = "<b>Lỗi:</b> " + e.message + "<br><small>Hãy kiểm tra quyền chia sẻ Sheet</small>";
-                console.error(e);
+                console.error("Lỗi:", e);
+                document.getElementById("loading").innerHTML = `<b style="color:red">Lỗi hệ thống:</b><br>${e.message}`;
             }
         }
         start();
