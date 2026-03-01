@@ -2,108 +2,104 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Final</title>
+    <title>Gia Phả Lê Công</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
         #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #333; color: #fff; padding: 15px; border-radius: 5px; font-family: Arial, sans-serif; }
-        .btn-force { background: #ff4757; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; margin-top: 10px; display: block; }
+        #status { position: fixed; bottom: 20px; left: 20px; z-index: 999; background: rgba(0,0,0,0.8); color: #fff; padding: 10px; font-family: monospace; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <div id="status">
-        <span id="msg">Đang đồng bộ dữ liệu từ Google Sheets...</span>
-        <button id="forceBtn" class="btn-force" style="display:none" onclick="renderTree()">Bấm để hiện cây ngay</button>
-    </div>
+    <div id="status">Khởi tạo...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        let finalNodes = [];
+        const status = document.getElementById("status");
 
-        function forceGetId(val) {
+        // Hàm lấy số ID: Lấy tất cả chữ số từ đầu chuỗi cho đến khi gặp ký tự khác
+        function parseId(val) {
             if (!val) return null;
-            let s = String(val).split(','); 
-            let cleanId = "";
-            for (let i = 0; i < s.length; i++) {
-                if (s[i] >= '0' && s[i] <= '9') cleanId += s[i];
-            }
-            return cleanId || null;
+            const match = String(val).match(/^\d+/);
+            return match ? match : null;
         }
 
-        function forceGetName(val) {
-            if (!val) return "Thành viên";
-            let s = String(val);
-            let parts = s.split(',');
-            return parts.length > 1 ? parts.slice(1).join(',').trim() : s.trim();
+        // Hàm lấy Tên: Lấy phần sau dấu phẩy, nếu không có thì lấy hết
+        function parseName(val) {
+            if (!val) return "";
+            const s = String(val);
+            return s.includes(',') ? s.split(',').slice(1).join(',').trim() : s;
         }
 
-        async function loadData() {
+        async function start() {
             try {
                 const fetchSheet = async (gid) => {
-                    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                    const res = await fetch(url);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    return json.table.rows.map(r => r.c ? r.c.map(cell => cell ? cell.v : null) : []);
+                    
+                    // Lấy 'f' (giá trị hiển thị) nếu 'v' (giá trị thô) bị lỗi
+                    return json.table.rows.map(row => 
+                        row.c.map(cell => cell ? (cell.f || cell.v || "") : "")
+                    );
                 };
 
+                status.innerText = "Đang đọc dữ liệu...";
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
                 let partnerMap = {}; 
 
+                // 1. Sheet dData (Vợ/Chồng)
                 dDataRows.forEach((r, i) => {
-                    if (i === 0 || !r) return;
-                    let id = forceGetId(r), pid = forceGetId(r);
+                    if (i === 0) return;
+                    const id = parseId(r);
+                    const pid = parseId(r);
                     if (id && pid) {
-                        nodesMap[id] = { id, pids: [pid], name: forceGetName(r || r), gender: "female" };
+                        nodesMap[id] = { id, pids: [pid], name: parseName(r || r), gender: "female" };
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
                     }
                 });
 
+                // 2. Sheet Data (Huyết thống)
                 dataRows.forEach((r, i) => {
-                    if (i === 0 || !r) return;
-                    let id = forceGetId(r);
+                    if (i === 0) return;
+                    const id = parseId(r);
                     if (id) {
                         nodesMap[id] = {
-                            id, 
-                            fid: forceGetId(r),
-                            mid: forceGetId(r),
+                            id,
+                            fid: parseId(r),
+                            mid: parseId(r),
                             pids: partnerMap[id] || [],
-                            name: forceGetName(r || r),
-                            gender: (String(r||"").toLowerCase().includes('nữ')) ? "female" : "male"
+                            name: parseName(r || r),
+                            gender: String(r).toLowerCase().includes('nữ') ? "female" : "male"
                         };
                     }
                 });
 
-                finalNodes = Object.values(nodesMap).slice(0, 195);
-                document.getElementById("msg").innerText = `Đã sẵn sàng ${finalNodes.length} người.`;
-                document.getElementById("forceBtn").style.display = "block";
-                
-                // Tự động vẽ sau 1 giây
-                setTimeout(renderTree, 1000);
+                const nodes = Object.values(nodesMap).slice(0, 195);
+                status.innerText = `Tìm thấy ${nodes.length} người. Đang vẽ...`;
+
+                if (nodes.length > 0) {
+                    new FamilyTree(document.getElementById("tree"), {
+                        template: "hugo",
+                        layout: FamilyTree.layout.hierarchy,
+                        nodeBinding: { field_0: "name", field_1: "id" },
+                        nodes: nodes
+                    });
+                    setTimeout(() => status.style.display = "none", 3000);
+                } else {
+                    status.innerText = "LỖI: Không bóc tách được ID nào!";
+                }
 
             } catch (e) {
-                document.getElementById("msg").innerText = "Lỗi: " + e.message;
+                status.innerText = "Lỗi: " + e.message;
             }
         }
-
-        function renderTree() {
-            if (finalNodes.length === 0) return;
-            document.getElementById("status").style.display = "none";
-            
-            new FamilyTree(document.getElementById("tree"), {
-                mouseScrol: FamilyTree.action.zoom,
-                template: "hugo",
-                layout: FamilyTree.layout.hierarchy,
-                nodeBinding: { field_0: "name", field_1: "id" },
-                nodes: finalNodes
-            });
-        }
-
-        loadData();
+        start();
     </script>
 </body>
 </html>
