@@ -2,103 +2,100 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Kiểm Tra Kết Nối</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
-        #tree { width: 100%; height: 100%; }
-        #status { position: fixed; bottom: 20px; left: 20px; z-index: 999; background: rgba(0,0,0,0.8); color: #fff; padding: 10px; font-family: monospace; border-radius: 5px; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f4f4; }
+        #tree { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        #info { position: fixed; top: 10px; left: 10px; z-index: 9999; background: white; padding: 15px; border-radius: 8px; border: 1px solid #ccc; font-family: sans-serif; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; }
     </style>
 </head>
 <body>
-    <div id="status">Khởi tạo...</div>
+    <div id="info">
+        <b>Trạng thái hệ thống:</b>
+        <div id="step1">1. Đang tải thư viện... Đang chờ</div>
+        <div id="step2">2. Đang đọc Google Sheets... Đang chờ</div>
+        <div id="step3">3. Đang bóc tách dữ liệu... Đang chờ</div>
+    </div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        const status = document.getElementById("status");
-
-        // Hàm lấy số ID: Lấy tất cả chữ số từ đầu chuỗi cho đến khi gặp ký tự khác
-        function parseId(val) {
-            if (!val) return null;
-            const match = String(val).match(/^\d+/);
-            return match ? match : null;
-        }
-
-        // Hàm lấy Tên: Lấy phần sau dấu phẩy, nếu không có thì lấy hết
-        function parseName(val) {
-            if (!val) return "";
-            const s = String(val);
-            return s.includes(',') ? s.split(',').slice(1).join(',').trim() : s;
+        
+        // Kiểm tra thư viện Balkan
+        if (typeof FamilyTree !== 'undefined') {
+            document.getElementById('step1').innerHTML = '1. Thư viện Balkan: <span class="success">OK</span>';
+        } else {
+            document.getElementById('step1').innerHTML = '1. Thư viện Balkan: <span class="error">Lỗi tải script!</span>';
         }
 
         async function start() {
             try {
-                const fetchSheet = async (gid) => {
-                    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-                    const res = await fetch(url);
+                // Hàm lấy dữ liệu sạch
+                const fetchRaw = async (gid) => {
+                    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
                     const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
-                    
-                    // Lấy 'f' (giá trị hiển thị) nếu 'v' (giá trị thô) bị lỗi
-                    return json.table.rows.map(row => 
-                        row.c.map(cell => cell ? (cell.f || cell.v || "") : "")
-                    );
+                    return JSON.parse(text.substring(47, text.length - 2));
                 };
 
-                status.innerText = "Đang đọc dữ liệu...";
-                const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
-                
-                let nodesMap = {};
-                let partnerMap = {}; 
+                const [data, dData] = await Promise.all([fetchRaw('0'), fetchRaw('1705210560')]);
+                document.getElementById('step2').innerHTML = '2. Google Sheets: <span class="success">Đã nhận dữ liệu</span>';
 
-                // 1. Sheet dData (Vợ/Chồng)
-                dDataRows.forEach((r, i) => {
-                    if (i === 0) return;
-                    const id = parseId(r);
-                    const pid = parseId(r);
+                let nodes = [];
+                let partnerMap = {};
+
+                // Bóc tách Phối ngẫu
+                dData.table.rows.forEach(row => {
+                    if (!row.c || !row.c) return;
+                    let id = String(row.c.f || row.c.v).split(',').replace(/\D/g, '');
+                    let pid = String(row.c?.f || row.c?.v || "").split(',').replace(/\D/g, '');
+                    let name = String(row.c?.f || row.c?.v || "Vợ/Chồng").split(',') || "Vợ/Chồng";
+                    
                     if (id && pid) {
-                        nodesMap[id] = { id, pids: [pid], name: parseName(r || r), gender: "female" };
+                        nodes.push({ id, pids: [pid], name, gender: "female" });
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
                     }
                 });
 
-                // 2. Sheet Data (Huyết thống)
-                dataRows.forEach((r, i) => {
-                    if (i === 0) return;
-                    const id = parseId(r);
+                // Bóc tách Huyết thống
+                data.table.rows.forEach((row, i) => {
+                    if (i === 0 || !row.c || !row.c) return;
+                    let id = String(row.c.f || row.c.v).split(',').replace(/\D/g, '');
                     if (id) {
-                        nodesMap[id] = {
-                            id,
-                            fid: parseId(r),
-                            mid: parseId(r),
+                        let name = String(row.c?.f || row.c?.v || row.c.f || "Thành viên").split(',') || "Thành viên";
+                        let fid = String(row.c?.f || row.c?.v || "").split(',').replace(/\D/g, '');
+                        let mid = String(row.c?.f || row.c?.v || "").split(',').replace(/\D/g, '');
+                        
+                        nodes.push({
+                            id, fid, mid,
                             pids: partnerMap[id] || [],
-                            name: parseName(r || r),
-                            gender: String(r).toLowerCase().includes('nữ') ? "female" : "male"
-                        };
+                            name: name.trim(),
+                            gender: String(row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male"
+                        });
                     }
                 });
 
-                const nodes = Object.values(nodesMap).slice(0, 195);
-                status.innerText = `Tìm thấy ${nodes.length} người. Đang vẽ...`;
+                document.getElementById('step3').innerHTML = `3. Dữ liệu: <span class="success">Đã tìm thấy ${nodes.length} người</span>`;
+                setTimeout(() => document.getElementById('info').style.display = 'none', 3000);
 
-                if (nodes.length > 0) {
-                    new FamilyTree(document.getElementById("tree"), {
-                        template: "hugo",
-                        layout: FamilyTree.layout.hierarchy,
-                        nodeBinding: { field_0: "name", field_1: "id" },
-                        nodes: nodes
-                    });
-                    setTimeout(() => status.style.display = "none", 3000);
-                } else {
-                    status.innerText = "LỖI: Không bóc tách được ID nào!";
-                }
+                // Vẽ cây
+                [attachment_0](attachment)
+                new FamilyTree(document.getElementById("tree"), {
+                    template: "hugo",
+                    layout: FamilyTree.layout.hierarchy,
+                    nodeBinding: { field_0: "name", field_1: "id" },
+                    nodes: nodes.slice(0, 195)
+                });
 
             } catch (e) {
-                status.innerText = "Lỗi: " + e.message;
+                document.getElementById('step2').innerHTML = `2. Google Sheets: <span class="error">Lỗi kết nối hoặc file chưa chia sẻ!</span>`;
+                console.error(e);
             }
         }
+
         start();
     </script>
 </body>
