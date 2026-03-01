@@ -2,108 +2,102 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Sửa Lỗi</title>
+    <title>Gia Phả Lê Công - Fix Load Failed</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f4f4; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 2px solid #b30000; text-align: center; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #status { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; border: 2px solid #b30000; }
+        .error { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="loading">Đang kết nối dữ liệu...<br><small>Vui lòng đợi trong giây lát</small></div>
+    <div id="status">Đang thiết lập kết nối an toàn với Google Sheets...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
         async function start() {
+            const statusDiv = document.getElementById("status");
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
-                    const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
+                    if (!res.ok) throw new Error("Không thể kết nối tới Google Sheets. Hãy kiểm tra quyền chia sẻ!");
                     
-                    // Lấy tiêu đề cột (dòng 1) để làm khóa (key)
+                    const text = await res.text();
+                    // Cách lấy JSON an toàn hơn không phụ thuộc vào độ dài cố định
+                    const startIdx = text.indexOf('{');
+                    const endIdx = text.lastIndexOf('}');
+                    if (startIdx === -1 || endIdx === -1) throw new Error("Dữ liệu Sheet không đúng định dạng.");
+                    
+                    const json = JSON.parse(text.substring(startIdx, endIdx + 1));
                     const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim().replace(/\s/g, ""));
                     
                     return json.table.rows.map(row => {
                         let obj = {};
                         row.c.forEach((cell, i) => {
-                            if (cols[i]) {
-                                obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
-                            }
+                            if (cols[i]) obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
                         });
                         return obj;
                     }).filter(item => item.id && item.id !== "null");
                 };
 
-                // Tải dữ liệu từ 2 Sheet
+                statusDiv.innerText = "Đang tải danh sách thành viên...";
                 const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
-                let partnerMap = {}; // Để gom vợ/chồng: {id_chồng: [id_vợ1, id_vợ2]}
+                let partnerMap = {}; 
 
-                // 1. Xử lý sheet dData (Vợ/Chồng) trước để lấy pids
+                // 1. Xử lý Phối ngẫu (dData)
                 dData.forEach(p => {
-                    const id = p.id;
-                    const pid = p.pid; // ID của chồng/vợ trong dòng tộc
-                    if (id && pid) {
-                        // Lưu vào bản đồ phối ngẫu
-                        if (!partnerMap[pid]) partnerMap[pid] = [];
-                        partnerMap[pid].push(id);
+                    if (p.id && p.pid) {
+                        if (!partnerMap[p.pid]) partnerMap[p.pid] = [];
+                        partnerMap[p.pid].push(p.id);
 
-                        // Tạo node cho người phối ngẫu
-                        nodesMap[id] = {
-                            id: id,
-                            pids: [pid],
-                            name: p.fullname || p.name || p.hoten || "Vợ/Chồng",
+                        nodesMap[p.id] = {
+                            id: p.id,
+                            pids: [p.pid],
+                            name: p.fullname || p.name || p.hoten || "Phối ngẫu",
                             gender: "female"
                         };
                     }
                 });
 
-                // 2. Xử lý sheet Data (Huyết thống)
+                // 2. Xử lý Huyết thống (Data)
                 data.forEach(m => {
                     if (m.id) {
                         nodesMap[m.id] = {
                             id: m.id,
                             fid: (m.fid && m.fid !== "0") ? m.fid : null,
                             mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                            pids: partnerMap[m.id] || [], // Lấy danh sách vợ từ partnerMap
+                            pids: partnerMap[m.id] || [], 
                             name: m.fullname || m.name || m.hoten || "Thành viên",
                             gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
                         };
                     }
                 });
 
-                // 3. Chuyển thành mảng và giới hạn 190 người để lách luật Balkan
                 let allNodes = Object.values(nodesMap);
-                // Sắp xếp ID để đảm bảo thứ tự nạp đời tổ trước
+                if (allNodes.length === 0) throw new Error("Sheet trống hoặc không có ID hợp lệ.");
+
+                // Lách luật 200 node bằng cách lấy 185 người đầu
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-                const finalNodes = allNodes.slice(0, 190);
+                const finalNodes = allNodes.slice(0, 185);
 
-                document.getElementById("loading").style.display = "none";
-
-                if (finalNodes.length === 0) {
-                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu!";
-                    return;
-                }
+                statusDiv.style.display = "none";
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    nodeBinding: {
-                        field_0: "name",
-                        field_1: "id"
-                    },
+                    nodeBinding: { field_0: "name", field_1: "id" },
                     nodes: finalNodes
                 });
 
             } catch (e) {
+                statusDiv.innerHTML = `<div class="error">LỖI TẢI DỮ LIỆU:</div><br>${e.message}<br><br><small>Hãy đảm bảo Sheet đã bật "Anyone with the link can view"</small>`;
                 console.error(e);
-                document.getElementById("loading").innerHTML = "<b>Lỗi:</b> " + e.message;
             }
         }
         start();
