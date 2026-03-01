@@ -1,91 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gia Phả Lê Công</title>
+    <script src="https://balkan.app/js/familytree.js"></script>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+        #tree { width: 100%; height: 100%; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="loading">Đang tải dữ liệu từ Google Sheets...</div>
+    <div id="tree"></div>
+
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+        // GID 0 là sheet Data, GID 1705210560 là sheet dData
+        const gids = ['0', '1705210560']; 
 
-        async function fetchSheet(gid) {
-            const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+        async function fetchData() {
             try {
-                const res = await fetch(url);
-                const text = await res.text();
-                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
-                if (!jsonMatch) return [];
-                const data = JSON.parse(jsonMatch);
+                let allRows = [];
                 
-                // Lấy tên cột và làm sạch (xóa khoảng trắng, chuyển chữ thường)
-                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().replace(/\s/g, "_"));
-                
-                return data.table.rows.map(row => {
-                    let obj = {};
-                    row.c.forEach((cell, i) => {
-                        if (cols[i]) {
-                            let val = (cell && cell.v !== null) ? String(cell.v).trim() : null;
-                            obj[cols[i]] = val;
-                        }
-                    });
-                    return obj;
-                }).filter(item => item.id && item.id !== "null");
-            } catch (e) {
-                console.error("Lỗi tải Sheet GID " + gid, e);
-                return [];
-            }
-        }
-
-        async function start() {
-            try {
-                // Tải dữ liệu từ 2 sheet
-                const [raw_data, raw_dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
-                
-                let allNodes = [];
-                let partnerMap = {};
-
-                // 1. Xử lý Sheet Vợ/Chồng (dData)
-                raw_dData.forEach(s => {
-                    // Tự động tìm cột tên (có thể là full_name hoặc name hoặc họ_và_tên)
-                    let name = s.full_name || s.name || s.ho_ten || "Thành viên";
-                    let id = s.id;
-                    let pid = s.pid || s.parent_id;
-
-                    if (id && pid) {
-                        allNodes.push({ id: id, pids: [pid], name: name, gender: "female" });
-                        if (!partnerMap[pid]) partnerMap[pid] = [];
-                        partnerMap[pid].push(id);
-                    }
-                });
-
-                // 2. Xử lý Sheet Huyết thống (Data)
-                raw_data.forEach(m => {
-                    let name = m.full_name || m.name || m.ho_ten || "Thành viên";
-                    if (m.id) {
-                        allNodes.push({
-                            id: m.id,
-                            fid: (m.fid && m.fid !== "0") ? m.fid : null,
-                            mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                            pids: partnerMap[m.id] || [],
-                            name: name,
-                            gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                for (let gid of gids) {
+                    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                    const res = await fetch(url);
+                    const text = await res.text();
+                    const json = JSON.parse(text.substring(47, text.length - 2));
+                    
+                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                    const rows = json.table.rows.map(row => {
+                        let item = {};
+                        row.c.forEach((cell, i) => {
+                            if (cols[i]) item[cols[i]] = cell ? String(cell.v) : null;
                         });
-                    }
-                });
-
-                if (allNodes.length === 0) {
-                    document.getElementById("loading").innerHTML = "<b>Lỗi:</b> Không tìm thấy dữ liệu. <br>Hãy đảm bảo dòng đầu tiên của Sheet có các cột: ID, Full Name, FID, MID.";
-                    return;
+                        return item;
+                    });
+                    allRows = allRows.concat(rows);
                 }
 
-                // 3. Khởi tạo cây
-                const family = new FamilyTree(document.getElementById("tree"), {
-                    template: "hugo",
-                    layout: FamilyTree.mixed,
-                    mouseScrol: FamilyTree.action.zoom,
-                    searchFields: ["name"],
-                    nodeBinding: { field_0: "name" }
+                // Chuyển đổi sang định dạng Balkan FamilyTree
+                const nodes = allRows.filter(r => r.id).map(r => {
+                    return {
+                        id: r.id,
+                        pids: r.pid ? [r.pid] : (r.pids ? r.pids.split(',') : []),
+                        mid: (r.mid && r.mid !== "0") ? r.mid : null,
+                        fid: (r.fid && r.fid !== "0") ? r.fid : null,
+                        name: r.full_name || r.name || "Thành viên",
+                        gender: (r.gender && r.gender.toLowerCase().includes('f')) ? "female" : "male"
+                    };
                 });
 
                 document.getElementById("loading").style.display = "none";
-                family.load(allNodes);
 
-            } catch (err) {
-                document.getElementById("loading").innerText = "Lỗi xử lý: " + err.message;
+                const family = new FamilyTree(document.getElementById("tree"), {
+                    mouseScrol: FamilyTree.action.zoom,
+                    nodeBinding: { field_0: "name" },
+                    nodes: nodes
+                });
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById("loading").innerText = "Lỗi: " + e.message + ". Hãy kiểm tra Console (F12).";
             }
         }
-        start();
+
+        fetchData();
     </script>
+</body>
+</html>
