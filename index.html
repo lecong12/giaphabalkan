@@ -2,89 +2,89 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Radar Check</title>
+    <title>Gia Phả Lê Công - Fix Load</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
         #tree { width: 100%; height: 100%; position: absolute; }
-        #log { position: fixed; bottom: 10px; left: 10px; z-index: 999; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; border: 1px solid #0f0; }
+        #status { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #000; color: #0f0; padding: 8px 15px; border-radius: 4px; font-family: monospace; font-size: 12px; border: 1px solid #0f0; }
     </style>
 </head>
 <body>
-    <div id="log">📡 Đang quét dữ liệu...</div>
+    <div id="status">📡 Đang kết nối máy chủ dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        const log = document.getElementById("log");
+        const st = document.getElementById("status");
 
-        // Hàm bóc số ID dù dữ liệu nhảy kiểu gì
+        // Hàm xử lý ID an toàn: Lấy số đầu tiên trước dấu phẩy
         function toId(v) {
-            if (!v) return null;
-            let s = String(v).split(',');
-            let id = s.replace(/\D/g, ''); // Chỉ lấy số
-            return id || null;
+            if (v === null || v === undefined) return null;
+            let s = String(v).split(',').replace(/[^\d]/g, '');
+            return s || null;
         }
 
         async function start() {
             try {
                 const fetchG = async (gid) => {
                     const r = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                    if (!r.ok) throw new Error("Không thể kết nối Sheets");
                     const t = await r.text();
                     const j = JSON.parse(t.substring(47, t.length - 2));
                     return j.table.rows;
                 };
 
-                log.innerHTML += "<br>1. Đang gọi Google Sheets...";
                 const [r1, r2] = await Promise.all([fetchG('0'), fetchG('1705210560')]);
                 
                 let nodes = [];
                 let pMap = {};
 
-                // Quét phối ngẫu
+                // 1. Xử lý Vợ/Chồng
                 r2.forEach(row => {
                     if (!row.c || !row.c) return;
-                    let id = toId(row.c.f || row.c.v);
-                    let pid = toId(row.c?.f || row.c?.v);
+                    let val0 = row.c.f || row.c.v;
+                    let val1 = row.c?.f || row.c?.v;
+                    let id = toId(val0);
+                    let pid = toId(val1);
                     if (id && pid) {
-                        nodes.push({ id, pids: [pid], name: "Vợ", gender: "female" });
+                        nodes.push({ id, pids: [pid], name: String(val0).split(',') || "Vợ", gender: "female" });
                         if (!pMap[pid]) pMap[pid] = []; pMap[pid].push(id);
                     }
                 });
 
-                // Quét huyết thống
+                // 2. Xử lý Huyết thống
                 r1.forEach((row, i) => {
                     if (i === 0 || !row.c || !row.c) return;
-                    let raw = row.c.f || row.c.v;
-                    let id = toId(raw);
+                    let val0 = row.c.f || row.c.v;
+                    let id = toId(val0);
                     if (id) {
-                        let name = (row.c?.f || row.c?.v || raw).toString().split(',') || raw;
+                        let name = (row.c?.f || row.c?.v || val0).toString().split(',') || val0;
                         nodes.push({
                             id, 
                             fid: toId(row.c?.f || row.c?.v),
                             mid: toId(row.c?.f || row.c?.v),
                             pids: pMap[id] || [],
-                            name: name.trim(),
+                            name: String(name).trim(),
                             gender: String(row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male"
                         });
                     }
                 });
 
-                log.innerHTML = `✅ Thành công! Đã nạp ${nodes.length} người.`;
-                if (nodes.length > 0) {
-                    setTimeout(() => log.style.display = 'none', 5000);
-                    [attachment_0](attachment)
-                    new FamilyTree(document.getElementById("tree"), {
-                        template: "hugo",
-                        layout: FamilyTree.layout.hierarchy,
-                        nodeBinding: { field_0: "name", field_1: "id" },
-                        nodes: nodes.slice(0, 198)
-                    });
-                } else {
-                    log.innerHTML = "❌ LỖI: Sheets trả về hàng trống!";
-                }
+                st.innerHTML = `✅ Đã nạp ${nodes.length} người.`;
+                setTimeout(() => st.style.display = 'none', 3000);
+
+                [attachment_0](attachment)
+                new FamilyTree(document.getElementById("tree"), {
+                    template: "hugo",
+                    layout: FamilyTree.layout.hierarchy,
+                    nodeBinding: { field_0: "name", field_1: "id" },
+                    nodes: nodes.slice(0, 198)
+                });
+
             } catch (e) {
-                log.innerHTML = "❌ Lỗi kết nối: Hãy kiểm tra quyền Chia sẻ Sheets.";
+                st.style.background = "red";
+                st.innerHTML = "❌ Lỗi: " + e.message + ". Hãy kiểm tra quyền Chia sẻ Sheets.";
             }
         }
         start();
