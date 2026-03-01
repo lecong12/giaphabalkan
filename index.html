@@ -9,82 +9,82 @@
                 const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
                 if (!jsonMatch) return [];
                 const data = JSON.parse(jsonMatch);
-                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
                 
-                return data.table.rows
-                    .map(row => {
-                        let obj = {};
-                        row.c.forEach((cell, i) => { 
-                            if (cols[i]) obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null; 
-                        });
-                        return obj;
-                    })
-                    .filter(item => item.id && item.id !== "null"); // Loại bỏ dòng trống không có ID
-            } catch (e) { 
-                console.error("Lỗi fetch GID " + gid, e);
-                return []; 
+                // Lấy tên cột và làm sạch (xóa khoảng trắng, chuyển chữ thường)
+                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().replace(/\s/g, "_"));
+                
+                return data.table.rows.map(row => {
+                    let obj = {};
+                    row.c.forEach((cell, i) => {
+                        if (cols[i]) {
+                            let val = (cell && cell.v !== null) ? String(cell.v).trim() : null;
+                            obj[cols[i]] = val;
+                        }
+                    });
+                    return obj;
+                }).filter(item => item.id && item.id !== "null");
+            } catch (e) {
+                console.error("Lỗi tải Sheet GID " + gid, e);
+                return [];
             }
         }
 
         async function start() {
             try {
+                // Tải dữ liệu từ 2 sheet
                 const [raw_data, raw_dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
                 
                 let allNodes = [];
                 let partnerMap = {};
 
-                // 1. Xử lý Vợ/Chồng (dData) trước
+                // 1. Xử lý Sheet Vợ/Chồng (dData)
                 raw_dData.forEach(s => {
-                    if (s.id && s.pid) {
-                        allNodes.push({
-                            id: s.id,
-                            pids: [s.pid],
-                            name: s.full_name || "Chưa rõ tên",
-                            gender: "female"
-                        });
-                        if (!partnerMap[s.pid]) partnerMap[s.pid] = [];
-                        partnerMap[s.pid].push(s.id);
+                    // Tự động tìm cột tên (có thể là full_name hoặc name hoặc họ_và_tên)
+                    let name = s.full_name || s.name || s.ho_ten || "Thành viên";
+                    let id = s.id;
+                    let pid = s.pid || s.parent_id;
+
+                    if (id && pid) {
+                        allNodes.push({ id: id, pids: [pid], name: name, gender: "female" });
+                        if (!partnerMap[pid]) partnerMap[pid] = [];
+                        partnerMap[pid].push(id);
                     }
                 });
 
-                // 2. Xử lý Huyết thống (Data)
+                // 2. Xử lý Sheet Huyết thống (Data)
                 raw_data.forEach(m => {
+                    let name = m.full_name || m.name || m.ho_ten || "Thành viên";
                     if (m.id) {
-                        // Kiểm tra tránh trùng ID nếu lỡ sheet dData cũng có ID đó
-                        if (allNodes.find(n => n.id === m.id)) return; 
-
                         allNodes.push({
                             id: m.id,
                             fid: (m.fid && m.fid !== "0") ? m.fid : null,
                             mid: (m.mid && m.mid !== "0") ? m.mid : null,
                             pids: partnerMap[m.id] || [],
-                            name: m.full_name || "Chưa rõ tên",
+                            name: name,
                             gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
                         });
                     }
                 });
 
-                // 3. Kiểm tra xem có dữ liệu không trước khi nạp
                 if (allNodes.length === 0) {
-                    document.getElementById("loading").innerText = "Không lấy được dữ liệu. Kiểm tra quyền chia sẻ Sheet!";
+                    document.getElementById("loading").innerHTML = "<b>Lỗi:</b> Không tìm thấy dữ liệu. <br>Hãy đảm bảo dòng đầu tiên của Sheet có các cột: ID, Full Name, FID, MID.";
                     return;
                 }
 
+                // 3. Khởi tạo cây
                 const family = new FamilyTree(document.getElementById("tree"), {
                     template: "hugo",
                     layout: FamilyTree.mixed,
                     mouseScrol: FamilyTree.action.zoom,
                     searchFields: ["name"],
-                    nodeBinding: { field_0: "name" },
-                    nodes: allNodes // Nạp trực tiếp tại đây cho chắc chắn
+                    nodeBinding: { field_0: "name" }
                 });
 
                 document.getElementById("loading").style.display = "none";
-                console.log("Đã nạp tổng cộng: " + allNodes.length + " thành viên.");
+                family.load(allNodes);
 
             } catch (err) {
-                console.error("Lỗi hệ thống:", err);
-                document.getElementById("loading").innerText = "Lỗi xử lý dữ liệu: " + err.message;
+                document.getElementById("loading").innerText = "Lỗi xử lý: " + err.message;
             }
         }
         start();
