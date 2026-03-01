@@ -1,3 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gia Phả Lê Công - Bản Sửa Lỗi</title>
+    <script src="https://balkan.app/js/familytree.js"></script>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        #tree { width: 100%; height: 100%; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 2px solid #b30000; text-align: center; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+    <div id="loading">Đang kết nối dữ liệu...<br><small>Vui lòng đợi trong giây lát</small></div>
+    <div id="tree"></div>
+
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
@@ -8,61 +24,72 @@
                     const res = await fetch(url);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                    
+                    // Lấy tiêu đề cột (dòng 1) để làm khóa (key)
+                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim().replace(/\s/g, ""));
+                    
                     return json.table.rows.map(row => {
-                        let item = {};
-                        row.c.forEach((cell, i) => { if (cols[i]) item[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null; });
-                        return item;
-                    }).filter(r => r.id);
+                        let obj = {};
+                        row.c.forEach((cell, i) => {
+                            if (cols[i]) {
+                                obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
+                            }
+                        });
+                        return obj;
+                    }).filter(item => item.id && item.id !== "null");
                 };
 
-                // Tải dữ liệu
+                // Tải dữ liệu từ 2 Sheet
                 const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
-                let partnerMap = {}; // Lưu quan hệ: ID_Chồng -> [ID_Vợ1, ID_Vợ2...]
+                let partnerMap = {}; // Để gom vợ/chồng: {id_chồng: [id_vợ1, id_vợ2]}
 
-                // BƯỚC 1: Quét sheet dData để lấy danh sách Vợ/Chồng và tạo liên kết
+                // 1. Xử lý sheet dData (Vợ/Chồng) trước để lấy pids
                 dData.forEach(p => {
-                    if (p.id && p.pid) {
-                        // Lưu vào partnerMap để tí nữa gắn vào Chồng
-                        if (!partnerMap[p.pid]) partnerMap[p.pid] = [];
-                        partnerMap[p.pid].push(p.id);
+                    const id = p.id;
+                    const pid = p.pid; // ID của chồng/vợ trong dòng tộc
+                    if (id && pid) {
+                        // Lưu vào bản đồ phối ngẫu
+                        if (!partnerMap[pid]) partnerMap[pid] = [];
+                        partnerMap[pid].push(id);
 
-                        // Tạo node cho Vợ
-                        nodesMap[p.id] = {
-                            id: p.id,
-                            pids: [p.pid], // Nối ngược về chồng
-                            name: p.full_name || "Vợ/Chồng",
+                        // Tạo node cho người phối ngẫu
+                        nodesMap[id] = {
+                            id: id,
+                            pids: [pid],
+                            name: p.fullname || p.name || p.hoten || "Vợ/Chồng",
                             gender: "female"
                         };
                     }
                 });
 
-                // BƯỚC 2: Quét sheet Data để lấy Huyết thống và gắn Vợ vào
+                // 2. Xử lý sheet Data (Huyết thống)
                 data.forEach(m => {
                     if (m.id) {
                         nodesMap[m.id] = {
                             id: m.id,
                             fid: (m.fid && m.fid !== "0") ? m.fid : null,
                             mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                            pids: partnerMap[m.id] || [], // Lấy danh sách ID vợ từ dData đã quét ở Bước 1
-                            name: m.full_name || "Thành viên",
+                            pids: partnerMap[m.id] || [], // Lấy danh sách vợ từ partnerMap
+                            name: m.fullname || m.name || m.hoten || "Thành viên",
                             gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
                         };
                     }
                 });
 
-                // BƯỚC 3: Chuyển đổi Map thành mảng và lách luật 200 node
-                // Ưu tiên nạp các đời đầu (ID nhỏ) để đảm bảo tính logic cha con
+                // 3. Chuyển thành mảng và giới hạn 190 người để lách luật Balkan
                 let allNodes = Object.values(nodesMap);
-                
-                // Sắp xếp theo ID để đảm bảo cha luôn được nạp trước hoặc cùng lúc với con
+                // Sắp xếp ID để đảm bảo thứ tự nạp đời tổ trước
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-
                 const finalNodes = allNodes.slice(0, 190);
 
                 document.getElementById("loading").style.display = "none";
+
+                if (finalNodes.length === 0) {
+                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu!";
+                    return;
+                }
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
@@ -76,8 +103,10 @@
 
             } catch (e) {
                 console.error(e);
-                document.getElementById("loading").innerText = "Lỗi logic: " + e.message;
+                document.getElementById("loading").innerHTML = "<b>Lỗi:</b> " + e.message;
             }
         }
         start();
     </script>
+</body>
+</html>
