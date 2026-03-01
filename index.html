@@ -2,35 +2,42 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Chuẩn Hóa</title>
+    <title>Gia Phả Lê Công</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f7f6; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 25px; border-radius: 12px; border: 2px solid #b30000; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 2px solid #b30000; text-align: center; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
-    <div id="loading">Đang chuẩn hóa dữ liệu gia phả...<br><small>Vui lòng đợi trong giây lát</small></div>
+    <div id="loading">Đang tải dữ liệu gia phả Lê Công...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        
+
+        // Hàm hỗ trợ chuyển đổi dữ liệu sang chữ thường an toàn
+        function safeLower(val) {
+            if (val === null || val === undefined) return "";
+            return String(val).toLowerCase().trim();
+        }
+
         async function start() {
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
                     const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
                     
-                    // Lấy dữ liệu thô và ép kiểu String an toàn cho từng ô
+                    // Cắt bỏ phần rác của Google JSON
+                    const startIdx = text.indexOf('{');
+                    const endIdx = text.lastIndexOf('}');
+                    const json = JSON.parse(text.substring(startIdx, endIdx + 1));
+                    
+                    // Lấy mảng dữ liệu thô
                     return json.table.rows.map(row => {
-                        return row.c.map(cell => {
-                            if (!cell || cell.v === null) return "";
-                            return String(cell.v).trim(); // Ép mọi thứ về String
-                        });
+                        return row.c.map(cell => (cell && cell.v !== null) ? cell.v : "");
                     });
                 };
 
@@ -40,14 +47,14 @@
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // 1. Xử lý Sheet dData (Vợ/Chồng) - PID là ID của chồng ở sheet Data
+                // 1. Xử lý Sheet dData (Vợ/Chồng)
                 dDataRows.forEach((r, index) => {
-                    if (index === 0) return; // Bỏ qua dòng tiêu đề
-                    let id = r;   // Cột A: ID người phối ngẫu
-                    let pid = r;  // Cột B: PID (ID của chồng/vợ trong dòng tộc)
-                    let name = r || r || "Phối ngẫu"; 
+                    if (index === 0) return; // Bỏ qua tiêu đề
+                    let id = String(r || "");
+                    let pid = String(r || "");
+                    let name = String(r || r || "Phối ngẫu");
 
-                    if (id && pid) {
+                    if (id && pid && id !== "null") {
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
 
@@ -62,34 +69,34 @@
 
                 // 2. Xử lý Sheet Data (Huyết thống)
                 dataRows.forEach((r, index) => {
-                    if (index === 0) return; // Bỏ qua dòng tiêu đề
-                    let id = r;   
-                    if (id) {
-                        // Kiểm tra giới tính an toàn sau khi đã ép kiểu String
-                        let genderValue = (r || "").toLowerCase();
-                        let isFemale = genderValue.includes('f') || genderValue.includes('nữ');
+                    if (index === 0) return; // Bỏ qua tiêu đề
+                    let id = String(r || "");
+                    if (id && id !== "null" && id !== "id") {
+                        // Kiểm tra giới tính an toàn
+                        let genderRaw = safeLower(r);
+                        let gender = (genderRaw.includes('f') || genderRaw.includes('nữ')) ? "female" : "male";
 
                         nodesMap[id] = {
                             id: id,
-                            fid: (r && r !== "0") ? r : null,
-                            mid: (r && r !== "0") ? r : null,
-                            pids: partnerMap[id] || [], // Gắn ID vợ từ dData vào pids của chồng
-                            name: r || "Thành viên",
-                            gender: isFemale ? "female" : "male"
+                            fid: (r && r != 0) ? String(r) : null,
+                            mid: (r && r != 0) ? String(r) : null,
+                            pids: partnerMap[id] || [], // Nối vợ từ partnerMap
+                            name: String(r || "Thành viên"),
+                            gender: gender
                         };
                     }
                 });
 
                 let allNodes = Object.values(nodesMap);
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-                
-                // GIỚI HẠN 185 NGƯỜI ĐỂ TRÁNH LỖI 200 NODES CỦA BALKAN
+
+                // LÁCH LUẬT: Giới hạn 185 người đầu tiên để không bị lỗi Trial Balkan
                 const finalNodes = allNodes.slice(0, 185);
 
                 document.getElementById("loading").style.display = "none";
 
                 if (finalNodes.length === 0) {
-                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu hợp lệ.";
+                    document.getElementById("loading").innerText = "Lỗi: Không tìm thấy dữ liệu ID!";
                     return;
                 }
 
@@ -104,8 +111,8 @@
                 });
 
             } catch (e) {
-                console.error("Lỗi:", e);
-                document.getElementById("loading").innerHTML = `<b style="color:red">Lỗi hệ thống:</b><br>${e.message}`;
+                console.error(e);
+                document.getElementById("loading").innerHTML = `<b style="color:red">Lỗi nạp dữ liệu:</b><br>${e.message}`;
             }
         }
         start();
