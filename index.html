@@ -10,70 +10,82 @@
                 if (!jsonMatch) return [];
                 const data = JSON.parse(jsonMatch);
                 const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
-                return data.table.rows.map(row => {
-                    let obj = {};
-                    row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
-                    return obj;
-                });
-            } catch (e) { return []; }
+                
+                return data.table.rows
+                    .map(row => {
+                        let obj = {};
+                        row.c.forEach((cell, i) => { 
+                            if (cols[i]) obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null; 
+                        });
+                        return obj;
+                    })
+                    .filter(item => item.id && item.id !== "null"); // Loại bỏ dòng trống không có ID
+            } catch (e) { 
+                console.error("Lỗi fetch GID " + gid, e);
+                return []; 
+            }
         }
 
         async function start() {
-            // 1. Tải song song cả 2 sheet
-            const [data, dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
-            
-            let allNodes = [];
-            let partnerMap = {}; // Lưu trữ mối quan hệ vợ chồng từ sheet dData
+            try {
+                const [raw_data, raw_dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
+                
+                let allNodes = [];
+                let partnerMap = {};
 
-            // 2. Xử lý sheet dData (Vợ/Chồng)
-            dData.forEach(s => {
-                if (s.id && s.pid) {
-                    allNodes.push({
-                        id: s.id,
-                        pids: [s.pid], // Kết nối với ID chồng/vợ ở sheet Data
-                        name: s.full_name,
-                        gender: "female" // Mặc định dData là vợ
-                    });
-                    // Lưu lại để tí nữa gán ngược vào chồng/vợ ở sheet Data
-                    if (!partnerMap[s.pid]) partnerMap[s.pid] = [];
-                    partnerMap[s.pid].push(s.id);
+                // 1. Xử lý Vợ/Chồng (dData) trước
+                raw_dData.forEach(s => {
+                    if (s.id && s.pid) {
+                        allNodes.push({
+                            id: s.id,
+                            pids: [s.pid],
+                            name: s.full_name || "Chưa rõ tên",
+                            gender: "female"
+                        });
+                        if (!partnerMap[s.pid]) partnerMap[s.pid] = [];
+                        partnerMap[s.pid].push(s.id);
+                    }
+                });
+
+                // 2. Xử lý Huyết thống (Data)
+                raw_data.forEach(m => {
+                    if (m.id) {
+                        // Kiểm tra tránh trùng ID nếu lỡ sheet dData cũng có ID đó
+                        if (allNodes.find(n => n.id === m.id)) return; 
+
+                        allNodes.push({
+                            id: m.id,
+                            fid: (m.fid && m.fid !== "0") ? m.fid : null,
+                            mid: (m.mid && m.mid !== "0") ? m.mid : null,
+                            pids: partnerMap[m.id] || [],
+                            name: m.full_name || "Chưa rõ tên",
+                            gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
+                        });
+                    }
+                });
+
+                // 3. Kiểm tra xem có dữ liệu không trước khi nạp
+                if (allNodes.length === 0) {
+                    document.getElementById("loading").innerText = "Không lấy được dữ liệu. Kiểm tra quyền chia sẻ Sheet!";
+                    return;
                 }
-            });
 
-            // 3. Xử lý sheet Data (Huyết thống trực hệ)
-            data.forEach(m => {
-                if (m.id) {
-                    allNodes.push({
-                        id: m.id,
-                        fid: (m.fid && m.fid !== "0") ? m.fid : null,
-                        mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                        pids: partnerMap[m.id] || [], // Lấy danh sách vợ/chồng từ map đã tạo ở trên
-                        name: m.full_name,
-                        gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
-                    });
-                }
-            });
+                const family = new FamilyTree(document.getElementById("tree"), {
+                    template: "hugo",
+                    layout: FamilyTree.mixed,
+                    mouseScrol: FamilyTree.action.zoom,
+                    searchFields: ["name"],
+                    nodeBinding: { field_0: "name" },
+                    nodes: allNodes // Nạp trực tiếp tại đây cho chắc chắn
+                });
 
-            // 4. Khởi tạo FamilyTree hiển thị toàn bộ
-            const family = new FamilyTree(document.getElementById("tree"), {
-                template: "hugo",
-                layout: FamilyTree.mixed,
-                mouseScrol: FamilyTree.action.zoom,
-                nodeMenu: { edit: { text: "Sửa" }, details: { text: "Chi tiết" } },
-                searchFields: ["name"],
-                nodeBinding: { field_0: "name" }
-            });
+                document.getElementById("loading").style.display = "none";
+                console.log("Đã nạp tổng cộng: " + allNodes.length + " thành viên.");
 
-            // Tắt loading và nạp TOÀN BỘ dữ liệu
-            document.getElementById("loading").style.display = "none";
-            
-            // family.load sẽ tự động dựng cây từ mảng allNodes
-            family.load(allNodes);
-
-            family.on('search-click', function (sender, nodeId) {
-                family.center(nodeId, { zoom: 0.8, smooth: true });
-                return false;
-            });
+            } catch (err) {
+                console.error("Lỗi hệ thống:", err);
+                document.getElementById("loading").innerText = "Lỗi xử lý dữ liệu: " + err.message;
+            }
         }
         start();
     </script>
