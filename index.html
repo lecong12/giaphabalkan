@@ -2,99 +2,97 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Sửa Lỗi Biến</title>
+    <title>Gia Phả Lê Công - Bản Quét Sạch</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
-        #tree { width: 100%; height: 100%; position: absolute; }
-        #loading { position: fixed; top: 10px; left: 10px; z-index: 999; background: #333; color: #fff; padding: 10px 20px; border-radius: 5px; font-family: sans-serif; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
+        #tree { width: 100%; height: 100%; }
+        #debug-panel { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #222; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; border-radius: 5px; max-width: 300px; border: 1px solid #555; }
     </style>
 </head>
 <body>
-    <div id="loading">Hệ thống đang nạp dữ liệu...</div>
+    <div id="debug-panel">Đang cưỡng chế đọc dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+        const panel = document.getElementById("debug-panel");
 
-        // Hàm xử lý an toàn tuyệt đối, không dùng biến lạ
-        function getSafeStr(cell) {
+        // Hàm bốc dữ liệu bất chấp định dạng
+        function pick(cell) {
             if (!cell) return "";
-            return String(cell.f || cell.v || "").trim();
+            return (cell.f || cell.v || "").toString().trim();
         }
 
-        function extractNumber(str) {
+        // Hàm lọc lấy con số ID đầu tiên trong một chuỗi
+        function getNumber(str) {
             if (!str) return null;
-            var match = str.split(',').match(/\d+/);
-            return match ? match : null;
+            const m = str.match(/\d+/);
+            return m ? m : null;
         }
 
         async function start() {
             try {
                 const fetchSheet = async (gid) => {
-                    const response = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
-                    const text = await response.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
-                    return json.table.rows;
+                    const r = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                    const t = await r.text();
+                    const j = JSON.parse(t.substring(47, t.length - 2));
+                    return j.table.rows;
                 };
 
-                const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
+                panel.innerHTML = "Dòng 1: Đang nạp Sheet...";
+                const [rowsData, rowsPartner] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                var nodes = [];
-                var partners = {};
+                let nodes = [];
+                let pMap = {};
 
-                // 1. Đọc Sheet phối ngẫu (dData)
-                dDataRows.forEach(function(row) {
+                // 1. Quét Sheet Vợ/Chồng
+                rowsPartner.forEach(row => {
                     if (!row.c) return;
-                    var rawId = getSafeStr(row.c);
-                    var rawPid = getSafeStr(row.c);
-                    var id = extractNumber(rawId);
-                    var pid = extractNumber(rawPid);
-                    
+                    let cells = row.c.map(c => pick(c));
+                    let id = getNumber(cells); // Cột 1
+                    let pid = getNumber(cells); // Cột 2
+                    let name = cells || cells;
                     if (id && pid) {
-                        nodes.push({ id: id, pids: [pid], name: rawId.split(',') || rawId, gender: "female" });
-                        if (!partners[pid]) partners[pid] = [];
-                        partners[pid].push(id);
+                        nodes.push({ id, pids: [pid], name: name.includes(',') ? name.split(',') : name, gender: "female" });
+                        if (!pMap[pid]) pMap[pid] = [];
+                        pMap[pid].push(id);
                     }
                 });
 
-                // 2. Đọc Sheet huyết thống (Data)
-                dataRows.forEach(function(row, i) {
+                // 2. Quét Sheet Huyết thống
+                rowsData.forEach((row, i) => {
                     if (i === 0 || !row.c) return;
-                    var rawId = getSafeStr(row.c);
-                    var id = extractNumber(rawId);
-                    
+                    let cells = row.c.map(c => pick(c));
+                    let id = getNumber(cells);
                     if (id) {
                         nodes.push({
                             id: id,
-                            fid: extractNumber(getSafeStr(row.c)),
-                            mid: extractNumber(getSafeStr(row.c)),
-                            pids: partners[id] || [],
-                            name: getSafeStr(row.c) || rawId.split(',') || rawId,
-                            gender: getSafeStr(row.c).toLowerCase().includes('nữ') ? "female" : "male"
+                            fid: getNumber(cells),
+                            mid: getNumber(cells),
+                            pids: pMap[id] || [],
+                            name: (cells || cells).includes(',') ? (cells || cells).split(',') : (cells || cells),
+                            gender: cells && cells.toLowerCase().includes('nữ') ? "female" : "male"
                         });
                     }
                 });
 
-                document.getElementById("loading").style.display = "none";
-
+                panel.innerHTML = `Tìm thấy ${nodes.length} người. Đang vẽ...`;
                 if (nodes.length > 0) {
+                    setTimeout(() => panel.style.display = 'none', 3000);
                     [attachment_0](attachment)
-                    var family = new FamilyTree(document.getElementById("tree"), {
+                    new FamilyTree(document.getElementById("tree"), {
                         template: "hugo",
                         layout: FamilyTree.layout.hierarchy,
-                        nodeBinding: {
-                            field_0: "name",
-                            field_1: "id"
-                        },
-                        nodes: nodes.slice(0, 195)
+                        nodeBinding: { field_0: "name", field_1: "id" },
+                        nodes: nodes.slice(0, 198)
                     });
                 } else {
-                    document.getElementById("loading").innerText = "Không có dữ liệu hợp lệ!";
+                    panel.innerHTML = "<b style='color:red'>LỖI: Sheets trả về 0 hàng.</b><br>Hãy mở Sheets -> Tệp -> Chia sẻ -> Phát hành lên web.";
                 }
 
             } catch (e) {
-                document.getElementById("loading").innerText = "Lỗi: " + e.message;
+                panel.innerHTML = "Lỗi: " + e.message;
             }
         }
         start();
