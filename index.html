@@ -2,92 +2,89 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Phục Hồi</title>
+    <title>Gia Phả Lê Công - Radar Check</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
-        #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #333; color: #fff; padding: 10px; border-radius: 5px; font-size: 13px; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fff; }
+        #tree { width: 100%; height: 100%; position: absolute; }
+        #log { position: fixed; bottom: 10px; left: 10px; z-index: 999; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; border: 1px solid #0f0; }
     </style>
 </head>
 <body>
-    <div id="status">Đang nạp dữ liệu...</div>
+    <div id="log">📡 Đang quét dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
+        const log = document.getElementById("log");
 
-        // Hàm bóc tách ID - Logic giúp node từng hiển thị thành công
-        function toId(val) {
-            if (val === null || val === undefined) return null;
-            let res = String(val).split(',').replace(/[^\d]/g, '');
-            return res || null;
+        // Hàm bóc số ID dù dữ liệu nhảy kiểu gì
+        function toId(v) {
+            if (!v) return null;
+            let s = String(v).split(',');
+            let id = s.replace(/\D/g, ''); // Chỉ lấy số
+            return id || null;
         }
 
         async function start() {
             try {
-                const fetchSheet = async (gid) => {
-                    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
-                    const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
-                    return json.table.rows;
+                const fetchG = async (gid) => {
+                    const r = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                    const t = await r.text();
+                    const j = JSON.parse(t.substring(47, t.length - 2));
+                    return j.table.rows;
                 };
 
-                const [rows1, rows2] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
+                log.innerHTML += "<br>1. Đang gọi Google Sheets...";
+                const [r1, r2] = await Promise.all([fetchG('0'), fetchG('1705210560')]);
                 
                 let nodes = [];
-                let partnerMap = {}; 
+                let pMap = {};
 
-                // 1. Quét Sheet phối ngẫu (Vợ/Chồng)
-                rows2.forEach(row => {
+                // Quét phối ngẫu
+                r2.forEach(row => {
                     if (!row.c || !row.c) return;
-                    let id = toId(row.c.v);
-                    let pid = toId(row.c ? row.c.v : null);
-                    let name = (row.c && row.c.v ? row.c.v : row.c.v || "").toString();
-                    if (name.includes(',')) name = name.split(',');
-                    
+                    let id = toId(row.c.f || row.c.v);
+                    let pid = toId(row.c?.f || row.c?.v);
                     if (id && pid) {
-                        nodes.push({ id: id, pids: [pid], name: name.trim(), gender: "female" });
-                        if (!partnerMap[pid]) partnerMap[pid] = [];
-                        partnerMap[pid].push(id);
+                        nodes.push({ id, pids: [pid], name: "Vợ", gender: "female" });
+                        if (!pMap[pid]) pMap[pid] = []; pMap[pid].push(id);
                     }
                 });
 
-                // 2. Quét Sheet huyết thống
-                rows1.forEach((row, i) => {
+                // Quét huyết thống
+                r1.forEach((row, i) => {
                     if (i === 0 || !row.c || !row.c) return;
-                    let id = toId(row.c.v);
+                    let raw = row.c.f || row.c.v;
+                    let id = toId(raw);
                     if (id) {
-                        let name = (row.c && row.c.v ? row.c.v : row.c.v || "").toString();
-                        if (name.includes(',')) name = name.split(',');
-
+                        let name = (row.c?.f || row.c?.v || raw).toString().split(',') || raw;
                         nodes.push({
-                            id: id,
-                            fid: toId(row.c ? row.c.v : null),
-                            mid: toId(row.c ? row.c.v : null),
-                            pids: partnerMap[id] || [],
+                            id, 
+                            fid: toId(row.c?.f || row.c?.v),
+                            mid: toId(row.c?.f || row.c?.v),
+                            pids: pMap[id] || [],
                             name: name.trim(),
-                            gender: String(row.c && row.c.v ? row.c.v : "").toLowerCase().includes('nữ') ? "female" : "male"
+                            gender: String(row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male"
                         });
                     }
                 });
 
-                document.getElementById("status").style.display = "none";
-
-                // Khởi tạo cây với Layout Hierarchy để tránh lộn xộn
-                new FamilyTree(document.getElementById("tree"), {
-                    mouseScrol: FamilyTree.action.zoom,
-                    template: "hugo",
-                    layout: FamilyTree.layout.hierarchy, 
-                    nodeBinding: {
-                        field_0: "name",
-                        field_1: "id"
-                    },
-                    nodes: nodes.slice(0, 198)
-                });
-
+                log.innerHTML = `✅ Thành công! Đã nạp ${nodes.length} người.`;
+                if (nodes.length > 0) {
+                    setTimeout(() => log.style.display = 'none', 5000);
+                    [attachment_0](attachment)
+                    new FamilyTree(document.getElementById("tree"), {
+                        template: "hugo",
+                        layout: FamilyTree.layout.hierarchy,
+                        nodeBinding: { field_0: "name", field_1: "id" },
+                        nodes: nodes.slice(0, 198)
+                    });
+                } else {
+                    log.innerHTML = "❌ LỖI: Sheets trả về hàng trống!";
+                }
             } catch (e) {
-                document.getElementById("status").innerHTML = "Lỗi: " + e.message;
+                log.innerHTML = "❌ Lỗi kết nối: Hãy kiểm tra quyền Chia sẻ Sheets.";
             }
         }
         start();
