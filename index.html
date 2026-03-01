@@ -1,179 +1,79 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - V112</title>
-    <script src="https://balkan.app/js/familytree.js"></script>
-    <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #fdfdfd; font-family: "Segoe UI", Arial, sans-serif; }
-        
-        .header-container {
-            text-align: center;
-            padding: 15px 10px;
-            background: linear-gradient(to bottom, #b30000, #800000);
-            color: #ffd700;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            border-bottom: 3px solid #ffd700;
-            position: relative;
-            z-index: 10;
-        }
-        .header-container h1 { margin: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 2px; }
-        
-        /* Tùy chỉnh thanh tìm kiếm cho đẹp hơn */
-        .bft-search-container {
-            top: 110px !important;
-            left: 20px !important;
-        }
-
-        #tree { width: 100%; height: calc(100% - 80px); }
-        .bft-license-message { display: none !important; }
-        
-        /* Loading Spinner: Hiển thị khi đang tải dữ liệu */
-        #loading {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 18px; color: #555; background: rgba(255,255,255,0.95);
-            padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            z-index: 1000; font-weight: bold; border: 1px solid #ddd;
-        }
-    </style>
-</head>
-<body>
-    <div class="header-container">
-        <h1>Gia Phả Họ Lê Công</h1>
-        <p>Hệ thống tìm kiếm thành viên thông minh</p>
-    </div>
-    <div id="loading">Đang kết nối dữ liệu Google Sheets...</div>
-    <div id="tree"></div>
-
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
         async function fetchSheet(gid) {
             const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-            // Thử lại tối đa 3 lần nếu gặp lỗi 502 hoặc lỗi mạng
-            for (let i = 0; i < 3; i++) {
-                try {
-                    const res = await fetch(url);
-                    if (!res.ok) throw new Error(`Lỗi kết nối Google Sheets: ${res.status}`);
-                    const text = await res.text();
-                    
-                    // Dùng Regex để lấy JSON an toàn hơn
-                    const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
-                    if (!jsonMatch) throw new Error("Dữ liệu trả về không đúng định dạng JSON");
-                    const data = JSON.parse(jsonMatch[1]);
-                    
-                    const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
-                    return data.table.rows.map(row => {
-                        let obj = {};
-                        row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
-                        return obj;
-                    });
-                } catch (e) { 
-                    console.warn(`Lần thử ${i+1} thất bại (GID ${gid}):`, e);
-                    if (i === 2) {
-                        console.error("Không thể tải dữ liệu sau 3 lần thử.");
-                        return []; 
-                    }
-                    await new Promise(r => setTimeout(r, 1500)); // Đợi 1.5s trước khi thử lại
-                }
-            }
-            return [];
+            try {
+                const res = await fetch(url);
+                const text = await res.text();
+                const jsonMatch = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+?)\);?\s*$/);
+                if (!jsonMatch) return [];
+                const data = JSON.parse(jsonMatch);
+                const cols = data.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                return data.table.rows.map(row => {
+                    let obj = {};
+                    row.c.forEach((cell, i) => { if (cols[i]) obj[cols[i]] = cell ? String(cell.v).trim() : null; });
+                    return obj;
+                });
+            } catch (e) { return []; }
         }
 
         async function start() {
+            // 1. Tải song song cả 2 sheet
             const [data, dData] = await Promise.all([fetchSheet(0), fetchSheet(1705210560)]);
-            let nodes = [];
-            let pidsMap = {};
+            
+            let allNodes = [];
+            let partnerMap = {}; // Lưu trữ mối quan hệ vợ chồng từ sheet dData
 
+            // 2. Xử lý sheet dData (Vợ/Chồng)
             dData.forEach(s => {
-                if (s.id) {
-                    nodes.push({ id: s.id, pids: [s.pid], name: s.full_name, gender: "female" });
-                    if (s.pid) { if (!pidsMap[s.pid]) pidsMap[s.pid] = []; pidsMap[s.pid].push(s.id); }
+                if (s.id && s.pid) {
+                    allNodes.push({
+                        id: s.id,
+                        pids: [s.pid], // Kết nối với ID chồng/vợ ở sheet Data
+                        name: s.full_name,
+                        gender: "female" // Mặc định dData là vợ
+                    });
+                    // Lưu lại để tí nữa gán ngược vào chồng/vợ ở sheet Data
+                    if (!partnerMap[s.pid]) partnerMap[s.pid] = [];
+                    partnerMap[s.pid].push(s.id);
                 }
             });
 
-            // Giữ dữ liệu fix cứng để bảo vệ các cụ đầu nguồn
-            if (!nodes.find(n => n.id == "5001")) {
-                nodes.push({ id: "5001", pids: ["1"], name: "Tịnh Bà", gender: "female" });
-                if (!pidsMap["1"]) pidsMap["1"] = []; pidsMap["1"].push("5001");
-            }
-            if (!nodes.find(n => n.id == "5002")) {
-                nodes.push({ id: "5002", pids: ["2"], name: "Bùi Thị Việt", gender: "female" });
-                if (!pidsMap["2"]) pidsMap["2"] = []; pidsMap["2"].push("5002");
-            }
-
+            // 3. Xử lý sheet Data (Huyết thống trực hệ)
             data.forEach(m => {
                 if (m.id) {
-                    nodes.push({
+                    allNodes.push({
                         id: m.id,
                         fid: (m.fid && m.fid !== "0") ? m.fid : null,
-                        mid: (m.mid && m.mid !== "0") ? m.mid : (m.id == "2" ? "5001" : null),
-                        pids: pidsMap[m.id] || [],
+                        mid: (m.mid && m.mid !== "0") ? m.mid : null,
+                        pids: partnerMap[m.id] || [], // Lấy danh sách vợ/chồng từ map đã tạo ở trên
                         name: m.full_name,
                         gender: (m.gender || "").toLowerCase().includes('f') ? "female" : "male"
                     });
                 }
             });
 
+            // 4. Khởi tạo FamilyTree hiển thị toàn bộ
             const family = new FamilyTree(document.getElementById("tree"), {
                 template: "hugo",
                 layout: FamilyTree.mixed,
-                // Kích hoạt thanh tìm kiếm
-                searchFields: ["name"], 
-                nodeBinding: { field_0: "name" },
-                // nodes: nodes // Tắt load toàn bộ để tránh giới hạn 200 nodes
+                mouseScrol: FamilyTree.action.zoom,
+                nodeMenu: { edit: { text: "Sửa" }, details: { text: "Chi tiết" } },
+                searchFields: ["name"],
+                nodeBinding: { field_0: "name" }
             });
 
-            // --- Bắt đầu: Xử lý Lazy Loading (Tải từng phần) ---
-            // Hàm kiểm tra node đã hiển thị chưa
-            const isLoaded = (id) => family.get(id) !== undefined;
-
-            // Sự kiện click vào node để tải thêm con cái
-            family.on('click', function (sender, args) {
-                const id = args.node.id;
-                // Tìm các con trong dữ liệu gốc
-                const children = nodes.filter(n => n.fid == id || n.mid == id);
-                // Lọc ra những người chưa hiển thị
-                let toAdd = children.filter(c => !isLoaded(c.id));
-                // Tìm thêm vợ/chồng của những người mới này (để hiển thị đúng mối quan hệ)
-                const childIds = toAdd.map(c => c.id);
-                const partners = nodes.filter(n => n.pids && n.pids.some(pid => childIds.includes(pid)) && !isLoaded(n.id));
-                
-                const finalToAdd = [...toAdd, ...partners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
-                if (finalToAdd.length > 0) family.add(finalToAdd);
-            });
-
-            // Load lần đầu: Chỉ load các cụ Tổ (không có bố mẹ) và vợ/chồng
-            const roots = nodes.filter(n => !n.fid && !n.mid);
-            
-            // Giới hạn số lượng root ban đầu (ví dụ 30) để đảm bảo không bao giờ vượt quá 200 node khi cộng thêm vợ/chồng
-            const limitedRoots = roots.slice(0, 30);
-            
-            const rootIds = limitedRoots.map(r => r.id);
-            const rootPartners = nodes.filter(n => n.pids && n.pids.some(pid => rootIds.includes(pid)));
-            const initialData = [...limitedRoots, ...rootPartners].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i);
-            
-            if (nodes.length > 0 && initialData.length === 0) {
-                console.warn("Không tìm thấy node gốc nào để hiển thị. Kiểm tra lại dữ liệu fid/mid.");
-                alert("Cảnh báo: Không tìm thấy thành viên gốc (Ông Tổ) nào để hiển thị. Vui lòng kiểm tra cột fid/mid trong file Google Sheets.");
-            }
-
-            // Tắt thông báo loading khi đã có dữ liệu
+            // Tắt loading và nạp TOÀN BỘ dữ liệu
             document.getElementById("loading").style.display = "none";
+            
+            // family.load sẽ tự động dựng cây từ mảng allNodes
+            family.load(allNodes);
 
-            family.load(initialData);
-            // --- Kết thúc: Xử lý Lazy Loading ---
-
-            // Cấu hình: Khi tìm thấy, tự động nhảy đến và phóng to
             family.on('search-click', function (sender, nodeId) {
-                family.center(nodeId, {
-                    zoom: 0.8,
-                    smooth: true
-                });
-                return false; // Chặn hành động mặc định để chạy lệnh center mượt hơn
+                family.center(nodeId, { zoom: 0.8, smooth: true });
+                return false;
             });
         }
         start();
     </script>
-</body>
-</html>
