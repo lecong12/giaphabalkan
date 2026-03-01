@@ -2,28 +2,20 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Chống Lỗi Tuyệt Đối</title>
+    <title>Gia Phả Lê Công</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f8f9fa; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 2px solid #333; text-align: center; }
+        #loading { position: fixed; top: 20px; right: 20px; z-index: 100; font-family: sans-serif; background: #333; color: #fff; padding: 10px 20px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <div id="loading">Hệ thống đang quét dữ liệu an toàn...</div>
+    <div id="loading">Đang nạp danh sách...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-
-        // HÀM QUAN TRỌNG: Chống mọi loại lỗi "is not a function"
-        function cleanData(val) {
-            if (val === null || val === undefined) return "";
-            // Nếu là Object (lỗi r || ""), ta lấy giá trị v của nó hoặc ép về chuỗi
-            if (typeof val === 'object') return val.v ? String(val.v) : "";
-            return String(val).trim();
-        }
 
         async function start() {
             try {
@@ -32,24 +24,21 @@
                     const res = await fetch(url);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    
-                    // Lấy dữ liệu thô từ các hàng và cột
-                    return json.table.rows.map(row => {
-                        return row.c ? row.c.map(cell => (cell && cell.v !== null) ? cell.v : "") : [];
-                    });
+                    return json.table.rows;
                 };
 
+                // Tải dữ liệu
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
                 let partnerMap = {}; 
 
                 // 1. Xử lý Sheet dData (Vợ/Chồng)
-                dDataRows.forEach((r, index) => {
-                    if (index === 0 || !r.length) return; 
-                    let id = cleanData(r);
-                    let pid = cleanData(r);
-                    let name = cleanData(r || r || "Phối ngẫu");
+                dDataRows.forEach((row, index) => {
+                    if (index === 0 || !row.c) return;
+                    let id = row.c ? String(row.c.v) : null;
+                    let pid = row.c ? String(row.c.v) : null;
+                    let name = row.c ? String(row.c.v) : (row.c ? String(row.c.v) : "Vợ/Chồng");
 
                     if (id && pid && id !== "id") {
                         if (!partnerMap[pid]) partnerMap[pid] = [];
@@ -65,46 +54,45 @@
                 });
 
                 // 2. Xử lý Sheet Data (Huyết thống)
-                dataRows.forEach((r, index) => {
-                    if (index === 0 || !r.length) return;
-                    let id = cleanData(r);
+                dataRows.forEach((row, index) => {
+                    if (index === 0 || !row.c) return;
+                    let id = row.c ? String(row.c.v) : null;
                     if (id && id !== "id") {
-                        // Kiểm tra giới tính bằng cách so sánh chuỗi thô, KHÔNG dùng toLowerCase()
-                        let rawG = cleanData(r);
-                        let gender = (rawG === "f" || rawG === "F" || rawG === "Nữ" || rawG === "nữ") ? "female" : "male";
+                        let name = row.c ? String(row.c.v) : "Thành viên";
+                        let rawGender = row.c ? String(row.c.v).toLowerCase() : "";
+                        let gender = (rawGender.includes('f') || rawGender.includes('nữ')) ? "female" : "male";
 
                         nodesMap[id] = {
                             id: id,
-                            fid: (r && r != 0) ? cleanData(r) : null,
-                            mid: (r && r != 0) ? cleanData(r) : null,
+                            fid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
+                            mid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
                             pids: partnerMap[id] || [], 
-                            name: cleanData(r) || "Thành viên",
+                            name: name,
                             gender: gender
                         };
                     }
                 });
 
                 let allNodes = Object.values(nodesMap);
-                allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-
-                // Giới hạn 185 người để tránh lỗi bản quyền Balkan
+                // GIỚI HẠN 185 NODES ĐỂ CHẠY ĐƯỢC BẢN FREE
                 const finalNodes = allNodes.slice(0, 185);
 
                 document.getElementById("loading").style.display = "none";
 
-                new FamilyTree(document.getElementById("tree"), {
-                    mouseScrol: FamilyTree.action.zoom,
-                    template: "hugo",
-                    nodeBinding: { 
-                        field_0: "name", 
-                        field_1: "id" 
-                    },
-                    nodes: finalNodes
-                });
+                if (finalNodes.length > 0) {
+                    new FamilyTree(document.getElementById("tree"), {
+                        mouseScrol: FamilyTree.action.zoom,
+                        template: "hugo",
+                        nodeBinding: { field_0: "name", field_1: "id" },
+                        nodes: finalNodes
+                    });
+                } else {
+                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu để hiển thị!";
+                }
 
             } catch (e) {
                 console.error(e);
-                document.getElementById("loading").innerHTML = "<b>Lỗi nạp dữ liệu:</b> " + e.message;
+                document.getElementById("loading").innerText = "Lỗi nạp: " + e.message;
             }
         }
         start();
