@@ -2,12 +2,12 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Sửa Lỗi</title>
+    <title>Gia Phả Lê Công - Bản Phục Hồi</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
         #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #000; color: #fff; padding: 10px; border-radius: 5px; font-family: sans-serif; font-size: 13px; }
+        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #333; color: #fff; padding: 10px; border-radius: 5px; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -17,12 +17,11 @@
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
-        // Hàm bóc tách ID - Ép kiểu String cưỡng bách để không bị lỗi 'undefined'
+        // Hàm bóc tách ID - Logic giúp node từng hiển thị thành công
         function toId(val) {
-            if (val === null || val === undefined || val === "") return null;
-            var s = String(val).split(','); 
-            var id = s.replace(/[^\d]/g, '');
-            return id || null;
+            if (val === null || val === undefined) return null;
+            let res = String(val).split(',').replace(/[^\d]/g, '');
+            return res || null;
         }
 
         async function start() {
@@ -34,19 +33,18 @@
                     return json.table.rows;
                 };
 
-                // Lấy dữ liệu từ 2 Sheet
                 const [rows1, rows2] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                var nodes = [];
-                var partnerMap = {}; 
+                let nodes = [];
+                let partnerMap = {}; 
 
                 // 1. Quét Sheet phối ngẫu (Vợ/Chồng)
-                rows2.forEach(function(row) {
+                rows2.forEach(row => {
                     if (!row.c || !row.c) return;
-                    var id = toId(row.c.v);
-                    var pid = toId(row.c ? row.c.v : null);
-                    var rawName = row.c ? row.c.v : (row.c.v || "");
-                    var name = String(rawName).includes(',') ? String(rawName).split(',') : String(rawName);
+                    let id = toId(row.c.v);
+                    let pid = toId(row.c ? row.c.v : null);
+                    let name = (row.c && row.c.v ? row.c.v : row.c.v || "").toString();
+                    if (name.includes(',')) name = name.split(',');
                     
                     if (id && pid) {
                         nodes.push({ id: id, pids: [pid], name: name.trim(), gender: "female" });
@@ -56,13 +54,12 @@
                 });
 
                 // 2. Quét Sheet huyết thống
-                rows1.forEach(function(row, i) {
+                rows1.forEach((row, i) => {
                     if (i === 0 || !row.c || !row.c) return;
-                    var id = toId(row.c.v);
+                    let id = toId(row.c.v);
                     if (id) {
-                        var rawName = row.c ? row.c.v : (row.c.v || "");
-                        var name = String(rawName).includes(',') ? String(rawName).split(',') : String(rawName);
-                        var gender = String(row.c ? row.c.v : "").toLowerCase().includes('nữ') ? "female" : "male";
+                        let name = (row.c && row.c.v ? row.c.v : row.c.v || "").toString();
+                        if (name.includes(',')) name = name.split(',');
 
                         nodes.push({
                             id: id,
@@ -70,18 +67,18 @@
                             mid: toId(row.c ? row.c.v : null),
                             pids: partnerMap[id] || [],
                             name: name.trim(),
-                            gender: gender
+                            gender: String(row.c && row.c.v ? row.c.v : "").toLowerCase().includes('nữ') ? "female" : "male"
                         });
                     }
                 });
 
                 document.getElementById("status").style.display = "none";
 
-                // Vẽ cây - Layout Hierarchy giúp hết lộn xộn
-                [attachment_0](attachment)
+                // Khởi tạo cây với Layout Hierarchy để tránh lộn xộn
                 new FamilyTree(document.getElementById("tree"), {
+                    mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    layout: FamilyTree.layout.hierarchy,
+                    layout: FamilyTree.layout.hierarchy, 
                     nodeBinding: {
                         field_0: "name",
                         field_1: "id"
