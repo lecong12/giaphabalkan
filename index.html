@@ -1,8 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gia Phả Lê Công</title>
+    <script src="https://balkan.app/js/familytree.js"></script>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        #tree { width: 100%; height: 100%; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <div id="loading">Đang tải dữ liệu gia phả...</div>
+    <div id="tree"></div>
+
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
         async function start() {
             try {
+                // Hàm lấy data an toàn
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
@@ -11,70 +28,70 @@
                     const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
                     return json.table.rows.map(row => {
                         let item = {};
-                        row.c.forEach((cell, i) => { if (cols[i]) item[cols[i]] = cell ? String(cell.v) : null; });
+                        row.c.forEach((cell, i) => { if (cols[i]) item[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null; });
                         return item;
-                    }).filter(r => r.id);
+                    }).filter(r => r.id && r.id !== "null");
                 };
 
-                // Tải dữ liệu từ 2 Sheet
                 const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                let nodesMap = new Map();
+                let nodes = [];
 
-                // 1. Nạp Huyết thống (Sheet Data) vào Map trước
+                // 1. Thêm huyết thống từ sheet Data
                 data.forEach(m => {
-                    nodesMap.set(m.id, {
+                    nodes.push({
                         id: m.id,
                         fid: (m.fid && m.fid !== "0") ? m.fid : null,
                         mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                        pids: [], // Sẽ điền ở bước sau
+                        pids: [], // Sẽ cập nhật sau
                         name: m.full_name || "Thành viên",
                         gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
                     });
                 });
 
-                // 2. Nạp Vợ/Chồng (Sheet dData) và tạo mối liên kết 2 chiều (Nối dây)
+                // 2. Thêm vợ/chồng từ sheet dData và nối dây
                 dData.forEach(p => {
                     if (p.id && p.pid) {
-                        // Thêm người vợ/chồng vào danh sách node
-                        nodesMap.set(p.id, {
+                        // Thêm node vợ/chồng
+                        nodes.push({
                             id: p.id,
-                            pids: [p.pid], // Trỏ về chồng/vợ
+                            pids: [p.pid],
                             name: p.full_name || "Vợ/Chồng",
-                            gender: "female" // Thường dData là vợ
+                            gender: "female"
                         });
-
-                        // CẬP NHẬT NGƯỢC: Tìm người chồng/vợ trong huyết thống để nối dây lại
-                        if (nodesMap.has(p.pid)) {
-                            let partner = nodesMap.get(p.pid);
-                            if (!partner.pids.includes(p.id)) {
-                                partner.pids.push(p.id);
-                            }
+                        
+                        // Tìm chồng/vợ tương ứng để nối dây ngược lại
+                        let partner = nodes.find(n => n.id == p.pid);
+                        if (partner) {
+                            if (!partner.pids) partner.pids = [];
+                            partner.pids.push(p.id);
                         }
                     }
                 });
 
-                // 3. Chuyển Map thành mảng và LÁCH LUẬT 200 NODES
-                // Lưu ý: Lấy 190 người đầu để chừa chỗ cho các đường nối tự động phát sinh
-                let allNodes = Array.from(nodesMap.values());
-                const safeNodes = allNodes.slice(0, 190);
+                // 3. Giới hạn để không bị lỗi 200 nodes (Lấy 180 người đầu tiên)
+                const finalNodes = nodes.slice(0, 180);
 
                 document.getElementById("loading").style.display = "none";
+
+                if (finalNodes.length === 0) {
+                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu hợp lệ trong Sheet.";
+                    return;
+                }
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    nodeBinding: {
-                        field_0: "name",
-                        field_1: "id"
-                    },
-                    nodes: safeNodes
+                    nodeBinding: { field_0: "name" },
+                    nodes: finalNodes
                 });
 
             } catch (e) {
-                console.error(e);
-                document.getElementById("loading").innerText = "Lỗi kết nối: " + e.message;
+                console.error("Lỗi:", e);
+                document.getElementById("loading").innerHTML = "<b>Lỗi rồi:</b> " + e.message + "<br>Vui lòng kiểm tra lại quyền chia sẻ file Google Sheet.";
             }
         }
         start();
     </script>
+</body>
+</html>
