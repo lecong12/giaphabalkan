@@ -2,41 +2,49 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Sửa Lỗi Định Dạng</title>
+    <title>Gia Phả Lê Công - Fix Triệt Để</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
         #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #333; color: #fff; padding: 8px 15px; border-radius: 20px; font-size: 12px; }
+        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #b30000; color: #fff; padding: 8px 15px; border-radius: 5px; font-size: 12px; font-family: sans-serif; }
     </style>
 </head>
 <body>
-    <div id="status">Đang chuẩn hóa ID và nạp sơ đồ...</div>
+    <div id="status">Hệ thống đang đồng bộ dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
-        // HÀM FIX LỖI: Ép kiểu String tuyệt đối trước khi dùng replace
-        function getOnlyId(val) {
-            if (val === null || val === undefined || val === "") return null;
-            
-            // Ép về chuỗi và lấy phần trước dấu phẩy (nếu có)
-            let str = String(val).split(','); 
-            
-            // Loại bỏ tất cả ký tự không phải số
-            let id = str.replace(/[^\d]/g, ''); 
-            return id || null;
+        // HÀM BẢO VỆ TỐI CAO: Chặn đứng lỗi "is not a function"
+        function safeGetId(val) {
+            try {
+                if (val === null || val === undefined) return null;
+                // Ép thành chuỗi văn bản, sau đó lấy phần trước dấu phẩy
+                let rawStr = String(val);
+                let firstPart = rawStr.split(',');
+                // Lọc bỏ mọi ký tự không phải là số
+                let idOnly = firstPart.replace(/\D/g, ''); 
+                return idOnly || null;
+            } catch (err) {
+                return null;
+            }
         }
 
-        function getOnlyName(val) {
-            if (val === null || val === undefined || val === "") return "Thành viên";
-            let parts = String(val).split(',');
-            // Nếu có dấu phẩy, lấy phần sau. Nếu không, lấy toàn bộ.
-            return parts.length > 1 ? parts.slice(1).join(',').trim() : String(val).trim();
+        function safeGetName(val) {
+            try {
+                if (val === null || val === undefined) return "Thành viên";
+                let rawStr = String(val);
+                let parts = rawStr.split(',');
+                return parts.length > 1 ? parts.slice(1).join(',').trim() : rawStr.trim();
+            } catch (err) {
+                return "Thành viên";
+            }
         }
 
         async function start() {
+            const statusBox = document.getElementById("status");
             try {
                 const fetchSheet = async (gid) => {
                     const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
@@ -50,45 +58,45 @@
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // 1. Xử lý Vợ/Chồng (dData) - Nạp trước để có PIDS
+                // 1. Xử lý Sheet Phối ngẫu (dData)
                 dDataRows.forEach((r, i) => {
                     if (i === 0 || !r) return;
-                    let id = getOnlyId(r);
-                    let pid = getOnlyId(r);
-                    let name = getOnlyName(r || r);
+                    let id = safeGetId(r);
+                    let pid = safeGetId(r);
+                    let name = safeGetName(r || r);
 
                     if (id && pid) {
-                        nodesMap[id] = { id, pids: [pid], name, gender: "female" };
+                        nodesMap[id] = { id: id, pids: [pid], name: name, gender: "female" };
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
                     }
                 });
 
-                // 2. Xử lý Huyết thống (Data)
+                // 2. Xử lý Sheet Huyết thống (Data)
                 dataRows.forEach((r, i) => {
                     if (i === 0 || !r) return;
-                    let id = getOnlyId(r);
-                    let fid = getOnlyId(r);
-                    let mid = getOnlyId(r);
-                    let name = getOnlyName(r || r);
-                    let rawG = String(r || "").toLowerCase();
-                    let gender = (rawG.includes('f') || rawG.includes('nữ')) ? "female" : "male";
+                    let id = safeGetId(r);
+                    let fid = safeGetId(r);
+                    let mid = safeGetId(r);
+                    let name = safeGetName(r || r);
+                    let genderRaw = String(r || "").toLowerCase();
+                    let gender = (genderRaw.includes('f') || genderRaw.includes('nữ')) ? "female" : "male";
 
                     if (id) {
                         nodesMap[id] = {
-                            id, 
+                            id: id,
                             fid: (fid && fid !== id) ? fid : null,
-                            mid, 
-                            pids: partnerMap[id] || [], 
-                            name, 
-                            gender
+                            mid: mid,
+                            pids: partnerMap[id] || [],
+                            name: name,
+                            gender: gender
                         };
                     }
                 });
 
-                document.getElementById("status").style.display = "none";
+                statusBox.style.display = "none";
 
-                // 3. Khởi tạo cây với phân cấp
+                // 3. Khởi tạo cây với sơ đồ phân cấp
                 [attachment_0](attachment)
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
@@ -98,12 +106,11 @@
                         field_0: "name",
                         field_1: "id"
                     },
-                    nodes: Object.values(nodesMap).slice(0, 195)
+                    nodes: Object.values(nodesMap).slice(0, 198)
                 });
 
             } catch (e) {
-                document.getElementById("status").innerText = "Lỗi: " + e.message;
-                console.error(e);
+                statusBox.innerText = "Lỗi hệ thống: " + e.message;
             }
         }
         start();
