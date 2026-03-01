@@ -2,66 +2,71 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Final Fix</title>
+    <title>Gia Phả Lê Công - Hệ Thống Dò Tìm</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f0f2f5; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
         #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 5px; font-family: monospace; max-width: 90%; }
+        #debug { position: fixed; bottom: 10px; left: 10px; z-index: 999; background: #222; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; border-radius: 5px; max-height: 200px; overflow-y: auto; }
     </style>
 </head>
 <body>
-    <div id="status">Khởi động hệ thống...</div>
+    <div id="debug">Đang khởi động...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        
+        const debug = document.getElementById("debug");
+
+        function log(msg) { debug.innerHTML += "<br>> " + msg; debug.scrollTop = debug.scrollHeight; }
+
         async function start() {
-            const status = document.getElementById("status");
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
                     const text = await res.text();
-                    // Cắt bỏ phần bảo mật của Google
                     const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
                     return json.table.rows;
                 };
 
-                status.innerText = "Đang lấy dữ liệu từ Google...";
+                log("Đang tải dữ liệu từ Google...");
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodes = [];
                 let partnerMap = {};
 
-                // 1. Lấy dữ liệu phối ngẫu từ Sheet dData (Gid 1705210560)
+                // 1. Dò tìm Sheet Phối ngẫu (dData)
                 dDataRows.forEach(row => {
-                    if (!row.c || !row.c) return;
-                    let id = String(row.c.v);
-                    let pid = row.c ? String(row.c.v) : null;
-                    let name = row.c ? String(row.c.v) : "Vợ/Chồng";
+                    if (!row.c) return;
+                    let vals = row.c.map(cell => cell ? String(cell.v) : "");
+                    // Giả định: ô đầu là ID vợ, ô thứ hai là PID chồng, ô thứ ba là Tên
+                    let id = vals;
+                    let pid = vals;
+                    let name = vals || vals || "Vợ/Chồng";
 
-                    if (id && pid && id.toLowerCase() !== "id") {
+                    if (id && pid && !isNaN(id) && id !== "0") {
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
                         nodes.push({ id: id, pids: [pid], name: name, gender: "female" });
                     }
                 });
 
-                // 2. Lấy dữ liệu huyết thống từ Sheet Data (Gid 0)
+                // 2. Dò tìm Sheet Huyết thống (Data)
                 dataRows.forEach(row => {
-                    if (!row.c || !row.c) return;
-                    let id = String(row.c.v);
-                    if (id && id.toLowerCase() !== "id") {
-                        let name = row.c ? String(row.c.v) : "Thành viên " + id;
-                        let rawG = row.c ? String(row.c.v).toLowerCase() : "";
-                        let gender = (rawG.includes('f') || rawG.includes('nữ')) ? "female" : "male";
+                    if (!row.c) return;
+                    let vals = row.c.map(cell => cell ? String(cell.v) : "");
+                    let id = vals;
+                    
+                    if (id && !isNaN(id) && id !== "0") {
+                        let name = vals || vals || ("Thành viên " + id);
+                        let genderStr = (vals || "").toLowerCase();
+                        let gender = (genderStr.includes('f') || genderStr.includes('nữ')) ? "female" : "male";
 
                         nodes.push({
                             id: id,
-                            fid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
-                            mid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
+                            fid: (vals && vals != "0") ? vals : null,
+                            mid: (vals && vals != "0") ? vals : null,
                             pids: partnerMap[id] || [],
                             name: name,
                             gender: gender
@@ -69,17 +74,16 @@
                     }
                 });
 
-                status.innerText = `Tìm thấy ${nodes.length} thành viên. Đang vẽ cây...`;
+                log("Tổng số Node tìm được: " + nodes.length);
 
                 if (nodes.length === 0) {
-                    status.innerHTML = "LỖI: Mảng dữ liệu trống! Hãy kiểm tra lại cột ID trong Sheet.";
+                    log("KHÔNG CÓ DỮ LIỆU! Kiểm tra lại định dạng số ID ở cột A.");
                     return;
                 }
 
-                // Lách luật 200 nodes của Balkan
+                // Giới hạn để không lỗi bản quyền
                 const finalNodes = nodes.slice(0, 195);
-                
-                status.style.display = "none";
+                setTimeout(() => { debug.style.display = "none"; }, 3000);
 
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
@@ -89,7 +93,7 @@
                 });
 
             } catch (e) {
-                status.innerHTML = "LỖI NGHIÊM TRỌNG: " + e.message;
+                log("LỖI: " + e.message);
                 console.error(e);
             }
         }
