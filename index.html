@@ -1,54 +1,42 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Fix Load Failed</title>
-    <script src="https://balkan.app/js/familytree.js"></script>
-    <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f4f4; }
-        #tree { width: 100%; height: 100%; }
-        #status { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); text-align: center; border: 2px solid #b30000; }
-        .error { color: red; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div id="status">Đang thiết lập kết nối an toàn với Google Sheets...</div>
-    <div id="tree"></div>
-
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
         async function start() {
-            const statusDiv = document.getElementById("status");
+            const statusDiv = document.getElementById("status") || document.createElement("div");
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
-                    if (!res.ok) throw new Error("Không thể kết nối tới Google Sheets. Hãy kiểm tra quyền chia sẻ!");
-                    
                     const text = await res.text();
-                    // Cách lấy JSON an toàn hơn không phụ thuộc vào độ dài cố định
                     const startIdx = text.indexOf('{');
                     const endIdx = text.lastIndexOf('}');
-                    if (startIdx === -1 || endIdx === -1) throw new Error("Dữ liệu Sheet không đúng định dạng.");
-                    
                     const json = JSON.parse(text.substring(startIdx, endIdx + 1));
-                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim().replace(/\s/g, ""));
+                    
+                    // Lấy tiêu đề cột và làm sạch để so khớp
+                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
                     
                     return json.table.rows.map(row => {
                         let obj = {};
                         row.c.forEach((cell, i) => {
-                            if (cols[i]) obj[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
+                            if (cols[i]) {
+                                // Chuẩn hóa tên cột: bỏ dấu, bỏ cách để dễ so sánh
+                                let cleanCol = cols[i].normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s/g, "");
+                                obj[cleanCol] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
+                            }
                         });
                         return obj;
-                    }).filter(item => item.id && item.id !== "null");
+                    }).filter(item => item.id);
                 };
 
-                statusDiv.innerText = "Đang tải danh sách thành viên...";
                 const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
                 let partnerMap = {}; 
+
+                // Hàm tìm tên trong object bất kể key là gì (full_name, hoten, name...)
+                const getName = (obj) => {
+                    return obj.fullname || obj.hoten || obj.name || obj.ten || obj.hovaten || "Thành viên";
+                };
 
                 // 1. Xử lý Phối ngẫu (dData)
                 dData.forEach(p => {
@@ -59,7 +47,7 @@
                         nodesMap[p.id] = {
                             id: p.id,
                             pids: [p.pid],
-                            name: p.fullname || p.name || p.hoten || "Phối ngẫu",
+                            name: getName(p),
                             gender: "female"
                         };
                     }
@@ -73,22 +61,19 @@
                             fid: (m.fid && m.fid !== "0") ? m.fid : null,
                             mid: (m.mid && m.mid !== "0") ? m.mid : null,
                             pids: partnerMap[m.id] || [], 
-                            name: m.fullname || m.name || m.hoten || "Thành viên",
+                            name: getName(m),
                             gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
                         };
                     }
                 });
 
                 let allNodes = Object.values(nodesMap);
-                if (allNodes.length === 0) throw new Error("Sheet trống hoặc không có ID hợp lệ.");
-
-                // Lách luật 200 node bằng cách lấy 185 người đầu
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-                const finalNodes = allNodes.slice(0, 185);
+                const finalNodes = allNodes.slice(0, 190);
 
-                statusDiv.style.display = "none";
+                if(document.getElementById("status")) document.getElementById("status").style.display = "none";
 
-                const family = new FamilyTree(document.getElementById("tree"), {
+                new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
                     nodeBinding: { field_0: "name", field_1: "id" },
@@ -96,11 +81,8 @@
                 });
 
             } catch (e) {
-                statusDiv.innerHTML = `<div class="error">LỖI TẢI DỮ LIỆU:</div><br>${e.message}<br><br><small>Hãy đảm bảo Sheet đã bật "Anyone with the link can view"</small>`;
                 console.error(e);
             }
         }
         start();
     </script>
-</body>
-</html>
