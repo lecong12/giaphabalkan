@@ -2,27 +2,35 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Phân Cấp Chuẩn</title>
+    <title>Gia Phả Lê Công - Bản Sửa Lỗi Chuỗi</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f4f7f6; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
         #tree { width: 100%; height: 100%; }
         #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #333; color: #fff; padding: 8px 15px; border-radius: 20px; font-size: 12px; }
     </style>
 </head>
 <body>
-    <div id="status">Đang tính toán sơ đồ phân cấp...</div>
+    <div id="status">Đang chuẩn hóa dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
-        // Hàm quan trọng: Chỉ lấy số từ chuỗi dữ liệu (Ví dụ: "170,Lê HVVD" -> "170")
+        // HÀM SỬA LỖI: Kiểm tra str trước khi replace
         function getOnlyId(val) {
-            if (!val) return null;
-            let str = String(val).split(','); // Lấy phần trước dấu phẩy đầu tiên
-            let id = str.replace(/[^\d]/g, ''); // Loại bỏ tất cả ký tự không phải số
+            if (val === null || val === undefined) return null;
+            let str = String(val).split(','); // Lấy phần trước dấu phẩy
+            if (!str) return null;
+            let id = str.replace(/[^\d]/g, ''); // Chỉ lấy số
             return id || null;
+        }
+
+        function getOnlyName(val) {
+            if (!val) return "Thành viên";
+            let parts = String(val).split(',');
+            if (parts.length > 1) return parts.slice(1).join(',').trim(); // Lấy phần sau dấu phẩy
+            return String(val).trim();
         }
 
         async function start() {
@@ -31,7 +39,7 @@
                     const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    return json.table.rows.map(r => r.c.map(cell => cell ? cell.v : null));
+                    return json.table.rows.map(r => r.c ? r.c.map(cell => cell ? cell.v : null) : []);
                 };
 
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
@@ -44,7 +52,7 @@
                     if (i === 0 || !r) return;
                     let id = getOnlyId(r);
                     let pid = getOnlyId(r);
-                    let name = String(r || "Vợ/Chồng").split(',');
+                    let name = getOnlyName(r || r);
 
                     if (id && pid) {
                         nodesMap[id] = { id, pids: [pid], name, gender: "female" };
@@ -59,14 +67,14 @@
                     let id = getOnlyId(r);
                     let fid = getOnlyId(r);
                     let mid = getOnlyId(r);
-                    let name = String(r || "Thành viên").split(',');
+                    let name = getOnlyName(r || r);
                     let rawG = String(r || "").toLowerCase();
                     let gender = (rawG.includes('f') || rawG.includes('nữ')) ? "female" : "male";
 
                     if (id) {
                         nodesMap[id] = {
                             id, 
-                            fid: fid === id ? null : fid, // Tránh lỗi tự nối chính mình
+                            fid: (fid && fid !== id) ? fid : null,
                             mid, 
                             pids: partnerMap[id] || [], 
                             name, 
@@ -77,11 +85,12 @@
 
                 document.getElementById("status").style.display = "none";
 
-                // 3. Khởi tạo cây với Layout tự động
+                // 3. Khởi tạo cây với sơ đồ phân cấp (Hierarchy)
+                [attachment_0](attachment)
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    layout: FamilyTree.layout.hierarchy, // Ép buộc phân cấp
+                    layout: FamilyTree.layout.hierarchy,
                     nodeBinding: {
                         field_0: "name",
                         field_1: "id"
