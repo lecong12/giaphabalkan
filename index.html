@@ -2,97 +2,95 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Final Fix</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f8f9fa; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f0f2f5; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 20px; right: 20px; z-index: 100; font-family: sans-serif; background: #333; color: #fff; padding: 10px 20px; border-radius: 5px; }
+        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: rgba(0,0,0,0.8); color: #fff; padding: 15px; border-radius: 5px; font-family: monospace; max-width: 90%; }
     </style>
 </head>
 <body>
-    <div id="loading">Đang nạp danh sách...</div>
+    <div id="status">Khởi động hệ thống...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-
+        
         async function start() {
+            const status = document.getElementById("status");
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
                     const res = await fetch(url);
                     const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
+                    // Cắt bỏ phần bảo mật của Google
+                    const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
                     return json.table.rows;
                 };
 
-                // Tải dữ liệu
+                status.innerText = "Đang lấy dữ liệu từ Google...";
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                let nodesMap = {};
-                let partnerMap = {}; 
+                let nodes = [];
+                let partnerMap = {};
 
-                // 1. Xử lý Sheet dData (Vợ/Chồng)
-                dDataRows.forEach((row, index) => {
-                    if (index === 0 || !row.c) return;
-                    let id = row.c ? String(row.c.v) : null;
+                // 1. Lấy dữ liệu phối ngẫu từ Sheet dData (Gid 1705210560)
+                dDataRows.forEach(row => {
+                    if (!row.c || !row.c) return;
+                    let id = String(row.c.v);
                     let pid = row.c ? String(row.c.v) : null;
-                    let name = row.c ? String(row.c.v) : (row.c ? String(row.c.v) : "Vợ/Chồng");
+                    let name = row.c ? String(row.c.v) : "Vợ/Chồng";
 
-                    if (id && pid && id !== "id") {
+                    if (id && pid && id.toLowerCase() !== "id") {
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
-
-                        nodesMap[id] = {
-                            id: id,
-                            pids: [pid],
-                            name: name,
-                            gender: "female"
-                        };
+                        nodes.push({ id: id, pids: [pid], name: name, gender: "female" });
                     }
                 });
 
-                // 2. Xử lý Sheet Data (Huyết thống)
-                dataRows.forEach((row, index) => {
-                    if (index === 0 || !row.c) return;
-                    let id = row.c ? String(row.c.v) : null;
-                    if (id && id !== "id") {
-                        let name = row.c ? String(row.c.v) : "Thành viên";
-                        let rawGender = row.c ? String(row.c.v).toLowerCase() : "";
-                        let gender = (rawGender.includes('f') || rawGender.includes('nữ')) ? "female" : "male";
+                // 2. Lấy dữ liệu huyết thống từ Sheet Data (Gid 0)
+                dataRows.forEach(row => {
+                    if (!row.c || !row.c) return;
+                    let id = String(row.c.v);
+                    if (id && id.toLowerCase() !== "id") {
+                        let name = row.c ? String(row.c.v) : "Thành viên " + id;
+                        let rawG = row.c ? String(row.c.v).toLowerCase() : "";
+                        let gender = (rawG.includes('f') || rawG.includes('nữ')) ? "female" : "male";
 
-                        nodesMap[id] = {
+                        nodes.push({
                             id: id,
                             fid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
                             mid: (row.c && row.c.v != 0) ? String(row.c.v) : null,
-                            pids: partnerMap[id] || [], 
+                            pids: partnerMap[id] || [],
                             name: name,
                             gender: gender
-                        };
+                        });
                     }
                 });
 
-                let allNodes = Object.values(nodesMap);
-                // GIỚI HẠN 185 NODES ĐỂ CHẠY ĐƯỢC BẢN FREE
-                const finalNodes = allNodes.slice(0, 185);
+                status.innerText = `Tìm thấy ${nodes.length} thành viên. Đang vẽ cây...`;
 
-                document.getElementById("loading").style.display = "none";
-
-                if (finalNodes.length > 0) {
-                    new FamilyTree(document.getElementById("tree"), {
-                        mouseScrol: FamilyTree.action.zoom,
-                        template: "hugo",
-                        nodeBinding: { field_0: "name", field_1: "id" },
-                        nodes: finalNodes
-                    });
-                } else {
-                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu để hiển thị!";
+                if (nodes.length === 0) {
+                    status.innerHTML = "LỖI: Mảng dữ liệu trống! Hãy kiểm tra lại cột ID trong Sheet.";
+                    return;
                 }
 
+                // Lách luật 200 nodes của Balkan
+                const finalNodes = nodes.slice(0, 195);
+                
+                status.style.display = "none";
+
+                new FamilyTree(document.getElementById("tree"), {
+                    mouseScrol: FamilyTree.action.zoom,
+                    template: "hugo",
+                    nodeBinding: { field_0: "name", field_1: "id" },
+                    nodes: finalNodes
+                });
+
             } catch (e) {
+                status.innerHTML = "LỖI NGHIÊM TRỌNG: " + e.message;
                 console.error(e);
-                document.getElementById("loading").innerText = "Lỗi nạp: " + e.message;
             }
         }
         start();
