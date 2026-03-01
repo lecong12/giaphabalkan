@@ -2,71 +2,98 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Bản Lazy Loading</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
         #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; }
+        #loading { position: fixed; top: 20px; right: 20px; z-index: 100; background: gold; padding: 10px; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="loading">Đang tải dữ liệu từ Google Sheets...</div>
+    <div id="loading">Đang kết nối...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        // GID 0 là sheet Data, GID 1705210560 là sheet dData
-        const gids = ['0', '1705210560']; 
+        let allNodes = []; // Kho chứa toàn bộ 700+ người
+        let family;
 
-        async function fetchData() {
-            try {
-                let allRows = [];
-                
-                for (let gid of gids) {
-                    const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
-                    const res = await fetch(url);
-                    const text = await res.text();
-                    const json = JSON.parse(text.substring(47, text.length - 2));
-                    
-                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
-                    const rows = json.table.rows.map(row => {
-                        let item = {};
-                        row.c.forEach((cell, i) => {
-                            if (cols[i]) item[cols[i]] = cell ? String(cell.v) : null;
-                        });
-                        return item;
-                    });
-                    allRows = allRows.concat(rows);
-                }
-
-                // Chuyển đổi sang định dạng Balkan FamilyTree
-                const nodes = allRows.filter(r => r.id).map(r => {
-                    return {
-                        id: r.id,
-                        pids: r.pid ? [r.pid] : (r.pids ? r.pids.split(',') : []),
-                        mid: (r.mid && r.mid !== "0") ? r.mid : null,
-                        fid: (r.fid && r.fid !== "0") ? r.fid : null,
-                        name: r.full_name || r.name || "Thành viên",
-                        gender: (r.gender && r.gender.toLowerCase().includes('f')) ? "female" : "male"
-                    };
+        async function fetchAllData() {
+            const gids = ['0', '1705210560'];
+            let rawData = [];
+            for (let gid of gids) {
+                const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                const res = await fetch(url);
+                const text = await res.text();
+                const json = JSON.parse(text.substring(47, text.length - 2));
+                const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
+                const rows = json.table.rows.map(row => {
+                    let item = {};
+                    row.c.forEach((cell, i) => { if (cols[i]) item[cols[i]] = cell ? String(cell.v) : null; });
+                    return item;
                 });
-
-                document.getElementById("loading").style.display = "none";
-
-                const family = new FamilyTree(document.getElementById("tree"), {
-                    mouseScrol: FamilyTree.action.zoom,
-                    nodeBinding: { field_0: "name" },
-                    nodes: nodes
-                });
-
-            } catch (e) {
-                console.error(e);
-                document.getElementById("loading").innerText = "Lỗi: " + e.message + ". Hãy kiểm tra Console (F12).";
+                rawData = rawData.concat(rows);
             }
+
+            // Chuẩn hóa dữ liệu vào kho allNodes
+            allNodes = rawData.filter(r => r.id).map(r => ({
+                id: r.id,
+                pids: (r.pid && r.pid !== "0") ? [r.pid] : [],
+                mid: (r.mid && r.mid !== "0") ? r.mid : null,
+                fid: (r.fid && r.fid !== "0") ? r.fid : null,
+                name: r.full_name || r.name || "Thành viên",
+                gender: (r.gender && r.gender.toLowerCase().includes('f')) ? "female" : "male"
+            }));
+
+            renderInitialTree();
         }
 
-        fetchData();
+        function renderInitialTree() {
+            // Chỉ lấy 3 đời đầu tiên để bắt đầu (đảm bảo < 200 người)
+            const rootIds = ["1"]; // Bắt đầu từ cụ Tổ ID 1
+            const initialNodes = getFamilyGroup(rootIds);
+
+            document.getElementById("loading").style.display = "none";
+
+            family = new FamilyTree(document.getElementById("tree"), {
+                template: "hugo",
+                nodeBinding: { field_0: "name" },
+                nodes: initialNodes
+            });
+
+            // Khi click vào một người, nạp thêm con cái của họ
+            family.on('click', function (sender, args) {
+                const clickedId = args.node.id;
+                const children = allNodes.filter(n => n.fid == clickedId || n.mid == clickedId);
+                
+                if (children.length > 0) {
+                    // Lọc ra những người chưa có trên cây
+                    const newNodes = children.filter(c => !family.get(c.id));
+                    if (newNodes.length > 0) {
+                        family.add(newNodes);
+                        // Tự động thêm cả vợ/chồng của các con mới
+                        newNodes.forEach(child => {
+                            const partners = allNodes.filter(n => n.pids && n.pids.includes(child.id));
+                            family.add(partners);
+                        });
+                    }
+                }
+            });
+        }
+
+        // Hàm lấy một nhóm gia đình nhỏ quanh các ID cụ thể
+        function getFamilyGroup(ids) {
+            let result = allNodes.filter(n => ids.includes(n.id));
+            // Lấy thêm vợ/chồng
+            const partners = allNodes.filter(n => n.pids && n.pids.some(p => ids.includes(p)));
+            // Lấy thêm con cái đời F1
+            const children = allNodes.filter(n => ids.includes(n.fid) || ids.includes(n.mid));
+            
+            return [...new Set([...result, ...partners, ...children])];
+        }
+
+        fetchAllData();
     </script>
 </body>
 </html>
