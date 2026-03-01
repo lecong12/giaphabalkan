@@ -2,92 +2,61 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Fix Load</title>
+    <title>Kiểm tra GID Gia Phả</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
-        #tree { width: 100%; height: 100%; position: absolute; }
-        #status { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #000; color: #0f0; padding: 8px 15px; border-radius: 4px; font-family: monospace; font-size: 12px; border: 1px solid #0f0; }
+        body { background: #1a1a1a; color: #fff; font-family: sans-serif; }
+        #debug-box { padding: 20px; line-height: 1.6; border: 2px solid #444; margin: 20px; border-radius: 8px; }
+        .error { color: #ff4d4d; font-weight: bold; }
+        .success { color: #00ff00; }
+        #tree { width: 100%; height: 500px; }
     </style>
 </head>
 <body>
-    <div id="status">📡 Đang kết nối máy chủ dữ liệu...</div>
+    <div id="debug-box">
+        <h3>🔍 Nhật ký Radar Dữ liệu:</h3>
+        <div id="log-data">Đang kiểm tra Sheet Huyết thống (gid=0)...</div>
+        <div id="log-partner">Đang kiểm tra Sheet Vợ/Chồng (gid=1705210560)...</div>
+    </div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        const st = document.getElementById("status");
 
-        // Hàm xử lý ID an toàn: Lấy số đầu tiên trước dấu phẩy
-        function toId(v) {
-            if (v === null || v === undefined) return null;
-            let s = String(v).split(',').replace(/[^\d]/g, '');
-            return s || null;
-        }
-
-        async function start() {
-            try {
-                const fetchG = async (gid) => {
+        async function check() {
+            const fetchTest = async (gid, elementId, label) => {
+                const el = document.getElementById(elementId);
+                try {
                     const r = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
-                    if (!r.ok) throw new Error("Không thể kết nối Sheets");
                     const t = await r.text();
                     const j = JSON.parse(t.substring(47, t.length - 2));
-                    return j.table.rows;
-                };
-
-                const [r1, r2] = await Promise.all([fetchG('0'), fetchG('1705210560')]);
-                
-                let nodes = [];
-                let pMap = {};
-
-                // 1. Xử lý Vợ/Chồng
-                r2.forEach(row => {
-                    if (!row.c || !row.c) return;
-                    let val0 = row.c.f || row.c.v;
-                    let val1 = row.c?.f || row.c?.v;
-                    let id = toId(val0);
-                    let pid = toId(val1);
-                    if (id && pid) {
-                        nodes.push({ id, pids: [pid], name: String(val0).split(',') || "Vợ", gender: "female" });
-                        if (!pMap[pid]) pMap[pid] = []; pMap[pid].push(id);
+                    const count = j.table.rows.length;
+                    
+                    if (count > 0) {
+                        el.innerHTML = `<span class="success">✅ ${label} (gid=${gid}): Đã kết nối. Tìm thấy ${count} hàng.</span>`;
+                        return j.table.rows;
+                    } else {
+                        el.innerHTML = `<span class="error">❌ ${label} (gid=${gid}): Kết nối được nhưng KHÔNG có dữ liệu!</span>`;
+                        return [];
                     }
-                });
+                } catch (e) {
+                    el.innerHTML = `<span class="error">❌ ${label} (gid=${gid}): LỖI KẾT NỐI (Sai GID hoặc chưa Phát hành web).</span>`;
+                    return [];
+                }
+            };
 
-                // 2. Xử lý Huyết thống
-                r1.forEach((row, i) => {
-                    if (i === 0 || !row.c || !row.c) return;
-                    let val0 = row.c.f || row.c.v;
-                    let id = toId(val0);
-                    if (id) {
-                        let name = (row.c?.f || row.c?.v || val0).toString().split(',') || val0;
-                        nodes.push({
-                            id, 
-                            fid: toId(row.c?.f || row.c?.v),
-                            mid: toId(row.c?.f || row.c?.v),
-                            pids: pMap[id] || [],
-                            name: String(name).trim(),
-                            gender: String(row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male"
-                        });
-                    }
-                });
+            const [rows1, rows2] = await Promise.all([
+                fetchTest('0', 'log-data', 'Sheet Huyết thống'),
+                fetchTest('1705210560', 'log-partner', 'Sheet Vợ/Chồng')
+            ]);
 
-                st.innerHTML = `✅ Đã nạp ${nodes.length} người.`;
-                setTimeout(() => st.style.display = 'none', 3000);
-
-                [attachment_0](attachment)
-                new FamilyTree(document.getElementById("tree"), {
-                    template: "hugo",
-                    layout: FamilyTree.layout.hierarchy,
-                    nodeBinding: { field_0: "name", field_1: "id" },
-                    nodes: nodes.slice(0, 198)
-                });
-
-            } catch (e) {
-                st.style.background = "red";
-                st.innerHTML = "❌ Lỗi: " + e.message + ". Hãy kiểm tra quyền Chia sẻ Sheets.";
+            // Nếu có dữ liệu thì thử vẽ node
+            if (rows1.length > 0) {
+                // (Phần code vẽ FamilyTree giữ nguyên như cũ ở đây)
+                console.log("Dữ liệu sẵn sàng để vẽ.");
             }
         }
-        start();
+        check();
     </script>
 </body>
 </html>
