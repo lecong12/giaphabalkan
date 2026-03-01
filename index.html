@@ -1,3 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Gia Phả Lê Công</title>
+    <script src="https://balkan.app/js/familytree.js"></script>
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
+        #tree { width: 100%; height: 100%; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: white; padding: 20px; border: 2px solid #b30000; border-radius: 8px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+    <div id="loading">Hệ thống đang tải dữ liệu an toàn...</div>
+    <div id="tree"></div>
+
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
@@ -11,10 +27,10 @@
                     const endIdx = text.lastIndexOf('}');
                     const json = JSON.parse(text.substring(startIdx, endIdx + 1));
                     
-                    // Lấy dữ liệu theo vị trí cột (index) để không bị sai tên cột
+                    // Chuyển dữ liệu hàng thành mảng thô, xử lý ô trống an toàn
                     return json.table.rows.map(row => {
                         return row.c.map(cell => (cell && cell.v !== null) ? String(cell.v).trim() : "");
-                    }).filter(r => r && r !== "id" && r !== "ID"); // Bỏ dòng tiêu đề và dòng trống
+                    });
                 };
 
                 // Tải dữ liệu từ 2 Sheet
@@ -23,13 +39,14 @@
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // 1. Xử lý Phối ngẫu (Sheet dData)
-                // Giả định: Cột 0 là ID, Cột 1 là PID (ID chồng), Cột 2 hoặc 3 là Tên
-                dDataRows.forEach(r => {
-                    let id = r;
-                    let pid = r;
-                    let name = r || r || "Phối ngẫu";
-                    if (id && pid) {
+                // 1. Xử lý Sheet dData (Phối ngẫu) - Dò cột tự động
+                dDataRows.forEach((r, index) => {
+                    if (index === 0) return; // Bỏ qua dòng tiêu đề
+                    let id = r;   // Cột A: ID
+                    let pid = r;  // Cột B: PID (ID chồng)
+                    let name = r || r || "Phối ngẫu"; // Dò tên ở cột C hoặc D
+                    
+                    if (id && id !== "null" && pid) {
                         if (!partnerMap[pid]) partnerMap[pid] = [];
                         partnerMap[pid].push(id);
 
@@ -42,30 +59,39 @@
                     }
                 });
 
-                // 2. Xử lý Huyết thống (Sheet Data)
-                // Giả định: Cột 0: ID, Cột 1: FID, Cột 2: MID, Cột 3: Tên
-                dataRows.forEach(r => {
-                    let id = r;
-                    if (id) {
+                // 2. Xử lý Sheet Data (Huyết thống)
+                dataRows.forEach((r, index) => {
+                    if (index === 0) return; // Bỏ qua dòng tiêu đề
+                    let id = r;   // Cột A: ID
+                    if (id && id !== "null") {
+                        // Xác định giới tính an toàn
+                        let gStr = (r || "").toLowerCase();
+                        let gender = gStr.includes('f') || gStr.includes('nữ') ? "female" : "male";
+
                         nodesMap[id] = {
                             id: id,
-                            fid: (r && r !== "0") ? r : null,
-                            mid: (r && r !== "0") ? r : null,
-                            pids: partnerMap[id] || [], 
-                            name: r || r || "Thành viên",
-                            gender: (r && r.toLowerCase().includes('f')) ? "female" : "male"
+                            fid: (r && r !== "0") ? r : null, // Cột B: Cha
+                            mid: (r && r !== "0") ? r : null, // Cột C: Mẹ
+                            pids: partnerMap[id] || [],                // Lấy vợ từ dData
+                            name: r || r || "Thành viên",        // Cột D: Tên
+                            gender: gender
                         };
                     }
                 });
 
                 let allNodes = Object.values(nodesMap);
-                // Sắp xếp để đời cụ Tổ hiện lên trước
+                // Sắp xếp ID để Balkan dựng cây ổn định
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
                 
-                // LÁCH LUẬT 200 NODES: Chỉ lấy 180 người đầu tiên
-                const finalNodes = allNodes.slice(0, 180);
+                // GIỚI HẠN 180 NGƯỜI ĐỂ LÁCH LUẬT 200 NODES
+                const finalNodes = allNodes.slice(0, 185);
 
-                if(document.getElementById("status")) document.getElementById("status").style.display = "none";
+                document.getElementById("loading").style.display = "none";
+
+                if (finalNodes.length === 0) {
+                    document.getElementById("loading").innerText = "Lỗi: Không tìm thấy ID thành viên nào!";
+                    return;
+                }
 
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
@@ -79,8 +105,10 @@
 
             } catch (e) {
                 console.error("Lỗi:", e);
-                if(document.getElementById("status")) document.getElementById("status").innerText = "Lỗi: " + e.message;
+                document.getElementById("loading").innerHTML = `<b style="color:red">Lỗi hệ thống:</b><br>${e.message}<br><small>Vui lòng nhấn F12 xem Console</small>`;
             }
         }
         start();
     </script>
+</body>
+</html>
