@@ -2,89 +2,92 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
+    <title>Gia Phả Lê Công - Bản Hiển Thị Node</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
         #tree { width: 100%; height: 100%; }
-        #msg { position: fixed; top: 10px; left: 10px; z-index: 100; background: #000; color: #0f0; padding: 10px; font-family: monospace; }
+        #status { position: fixed; top: 10px; left: 10px; z-index: 1000; background: #333; color: #fff; padding: 10px; border-radius: 5px; font-size: 13px; }
     </style>
 </head>
 <body>
-    <div id="msg">Đang quét dữ liệu...</div>
+    <div id="status">Đang nạp dữ liệu...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
-        // Hàm lấy số ID cực mạnh: Chỉ lấy các ký tự là số từ chuỗi
-        function getNumber(val) {
+        // Hàm bóc tách ID - Logic giúp bạn từng hiện được node
+        function toId(val) {
             if (val === null || val === undefined) return null;
-            let s = String(val).split(','); 
-            let res = "";
-            for (let i = 0; i < s.length; i++) {
-                if (s[i] >= '0' && s[i] <= '9') res += s[i];
-            }
+            let res = String(val).split(',').replace(/[^\d]/g, '');
             return res || null;
         }
 
         async function start() {
             try {
                 const fetchSheet = async (gid) => {
-                    const r = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
-                    const t = await r.text();
-                    const j = JSON.parse(t.substring(47, t.length - 2));
-                    return j.table.rows;
+                    const res = await fetch(`https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`);
+                    const text = await res.text();
+                    const json = JSON.parse(text.substring(47, text.length - 2));
+                    return json.table.rows;
                 };
 
                 const [rows1, rows2] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodes = [];
-                let pMap = {}; 
+                let partnerMap = {}; 
 
-                // 1. Quét Sheet phối ngẫu
+                // 1. Quét Sheet phối ngẫu (Vợ/Chồng)
                 rows2.forEach(row => {
                     if (!row.c) return;
-                    let id = getNumber(row.c?.v || row.c?.f);
-                    let pid = getNumber(row.c?.v || row.c?.f);
+                    let id = toId(row.c?.v);
+                    let pid = toId(row.c?.v);
+                    let name = (row.c?.v || row.c?.v || "").toString();
+                    if (name.includes(',')) name = name.split(',');
+                    
                     if (id && pid) {
-                        nodes.push({ id: id, pids: [pid], name: "Vợ", gender: "female" });
-                        if (!pMap[pid]) pMap[pid] = [];
-                        pMap[pid].push(id);
+                        nodes.push({ id: id, pids: [pid], name: name.trim(), gender: "female" });
+                        if (!partnerMap[pid]) partnerMap[pid] = [];
+                        partnerMap[pid].push(id);
                     }
                 });
 
                 // 2. Quét Sheet huyết thống
                 rows1.forEach((row, i) => {
                     if (i === 0 || !row.c) return;
-                    let id = getNumber(row.c?.v || row.c?.f);
+                    let id = toId(row.c?.v);
                     if (id) {
-                        let name = (row.c?.v || row.c?.f || row.c?.v || "Thành viên").toString();
+                        let name = (row.c?.v || row.c?.v || "").toString();
                         if (name.includes(',')) name = name.split(',');
 
                         nodes.push({
                             id: id,
-                            fid: getNumber(row.c?.v || row.c?.f),
-                            mid: getNumber(row.c?.v || row.c?.f),
-                            pids: pMap[id] || [],
+                            fid: toId(row.c?.v),
+                            mid: toId(row.c?.v),
+                            pids: partnerMap[id] || [],
                             name: name.trim(),
                             gender: String(row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male"
                         });
                     }
                 });
 
-                document.getElementById("msg").style.display = "none";
+                document.getElementById("status").style.display = "none";
 
-                [attachment_0](attachment)
+                // Vẽ cây với chế độ Hierarchy (Phân cấp) để hết lộn xộn
                 new FamilyTree(document.getElementById("tree"), {
+                    mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    layout: FamilyTree.layout.hierarchy, // Sắp xếp lại cho hết lộn xộn
-                    nodeBinding: { field_0: "name", field_1: "id" },
-                    nodes: nodes
+                    layout: FamilyTree.layout.hierarchy, 
+                    nodeBinding: {
+                        field_0: "name",
+                        field_1: "id"
+                    },
+                    nodes: nodes.slice(0, 198)
                 });
 
             } catch (e) {
-                document.getElementById("msg").innerHTML = "Lỗi: " + e.message;
+                document.getElementById("status").innerHTML = "Lỗi: " + e.message;
             }
         }
         start();
