@@ -2,60 +2,36 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Tự Động Dò Cột</title>
+    <title>Gia Phả Lê Công - Dữ Liệu Tự Động</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
         #tree { width: 100%; height: 100%; position: absolute; }
-        #debug { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #000; color: #0f0; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; line-height: 1.5; }
+        #monitor { position: fixed; top: 10px; left: 10px; z-index: 9999; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; border-radius: 5px; opacity: 0.9; }
     </style>
 </head>
 <body>
-    <div id="debug">Đang khởi động radar dò dữ liệu...</div>
+    <div id="monitor">Đang quét dữ liệu tự động...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
-        const log = document.getElementById("debug");
+        const mon = document.getElementById("monitor");
 
-        function getCellText(cell) {
-            if (!cell) return "";
-            return (cell.f || cell.v || "").toString().trim();
+        // Hàm bóc tách ID từ dữ liệu tự động (Ví dụ: "170, Lê..." -> "170")
+        function cleanId(val) {
+            if (val === null || val === undefined) return null;
+            let s = String(val).split(','); // Lấy phần trước dấu phẩy
+            let id = s.replace(/\D/g, '');    // Chỉ giữ lại số
+            return id || null;
         }
 
-        // Hàm thông minh: Tìm ID và Tên trong 1 hàng bất kể ở cột nào
-        function parseRow(rowCells) {
-            let data = { id: null, name: "Thành viên", fid: null, mid: null, gender: "male" };
-            let rawValues = rowCells.map(c => getCellText(c));
-
-            // Giả định thứ tự dựa trên cấu trúc thông thường
-            // ID: thường là ô có chứa số đầu tiên
-            rawValues.forEach((val, index) => {
-                if (!val) return;
-                let idMatch = val.match(/^\d+/);
-                
-                if (idMatch) {
-                    let num = idMatch;
-                    if (index === 0) data.id = num;
-                    else if (index === 1) data.fid = num;
-                    else if (index === 2) data.mid = num;
-                    
-                    // Nếu ô có chứa dấu phẩy, bóc tách tên
-                    if (val.includes(',')) {
-                        let namePart = val.split(',').slice(1).join(',').trim();
-                        if (index === 0) data.name = namePart;
-                    }
-                }
-
-                // Dò giới tính
-                let lowerVal = val.toLowerCase();
-                if (lowerVal.includes('nữ') || lowerVal === 'f') data.gender = "female";
-                
-                // Nếu cột 3 (vị trí 3) có chữ mà chưa có tên, lấy làm tên
-                if (index === 3 && data.name === "Thành viên") data.name = val;
-            });
-
-            return data;
+        // Hàm bóc tách Tên
+        function cleanName(val) {
+            if (!val) return "Thành viên";
+            let s = String(val);
+            if (s.includes(',')) return s.split(',').slice(1).join(',').trim();
+            return s.trim();
         }
 
         async function start() {
@@ -68,44 +44,53 @@
                     return json.table.rows;
                 };
 
-                log.innerHTML = "📡 Đang quét sóng Google Sheets...";
                 const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // 1. Quét Sheet phối ngẫu
-                dDataRows.forEach((row, i) => {
-                    if (i === 0 || !row.c) return;
-                    let p = parseRow(row.c);
-                    if (p.id && p.fid) { // Ở sheet này, fid tạm hiểu là PID (ID chồng)
-                        nodesMap[p.id] = { id: p.id, pids: [p.fid], name: p.name, gender: "female" };
-                        if (!partnerMap[p.fid]) partnerMap[p.fid] = [];
-                        partnerMap[p.fid].push(p.id);
+                // 1. Quét Sheet phối ngẫu (dData)
+                dDataRows.forEach(row => {
+                    if (!row.c) return;
+                    // Dùng .f (Formatted Value) để đọc kết quả của công thức tự động
+                    let rawId = row.c?.f || row.c?.v;
+                    let rawPid = row.c?.f || row.c?.v;
+                    let id = cleanId(rawId);
+                    let pid = cleanId(rawPid);
+                    
+                    if (id && pid) {
+                        nodesMap[id] = { id, pids: [pid], name: cleanName(rawId), gender: "female" };
+                        if (!partnerMap[pid]) partnerMap[pid] = [];
+                        partnerMap[pid].push(id);
                     }
                 });
 
-                // 2. Quét Sheet huyết thống
+                // 2. Quét Sheet huyết thống (Data)
                 dataRows.forEach((row, i) => {
                     if (i === 0 || !row.c) return;
-                    let p = parseRow(row.c);
-                    if (p.id) {
-                        nodesMap[p.id] = {
-                            id: p.id,
-                            fid: (p.fid && p.fid !== p.id) ? p.fid : null,
-                            mid: p.mid,
-                            pids: partnerMap[p.id] || [],
-                            name: p.name,
-                            gender: p.gender
+                    let rawId = row.c?.f || row.c?.v;
+                    let id = cleanId(rawId);
+                    
+                    if (id) {
+                        let fid = cleanId(row.c?.f || row.c?.v);
+                        let mid = cleanId(row.c?.f || row.c?.v);
+                        let name = cleanName(row.c?.f || row.c?.v || rawId);
+                        let gender = String(row.c?.f || row.c?.v || "").toLowerCase().includes('nữ') ? "female" : "male";
+
+                        nodesMap[id] = {
+                            id, fid, mid,
+                            pids: partnerMap[id] || [],
+                            name: name,
+                            gender: gender
                         };
                     }
                 });
 
                 const nodes = Object.values(nodesMap);
-                log.innerHTML = `✅ Đã bóc tách thành công: ${nodes.length} người.`;
+                mon.innerHTML = `✅ Đã nạp ${nodes.length} thành viên.`;
 
                 if (nodes.length > 0) {
-                    setTimeout(() => log.style.display = "none", 3000);
+                    setTimeout(() => mon.style.display = "none", 3000);
                     [attachment_0](attachment)
                     new FamilyTree(document.getElementById("tree"), {
                         template: "hugo",
@@ -114,11 +99,11 @@
                         nodes: nodes.slice(0, 195)
                     });
                 } else {
-                    log.innerHTML = "❌ LỖI: Sheets trả về hàng trống. <br>Hãy kiểm tra quyền 'Chia sẻ công khai'.";
+                    mon.innerHTML = "❌ Không tìm thấy dữ liệu. Hãy kiểm tra cột ID.";
                 }
 
             } catch (e) {
-                log.innerHTML = "❌ Lỗi kết nối: " + e.message;
+                mon.innerHTML = "❌ Lỗi: " + e.message;
             }
         }
         start();
