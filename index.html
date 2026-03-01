@@ -1,19 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Gia Phả Lê Công</title>
-    <script src="https://balkan.app/js/familytree.js"></script>
-    <style>
-        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
-        #tree { width: 100%; height: 100%; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; font-family: sans-serif; background: #fff; padding: 20px; border: 2px solid #ccc; text-align: center; }
-    </style>
-</head>
-<body>
-    <div id="loading">Hệ thống đang dò tìm dữ liệu...<br><small>Vui lòng đợi trong giây lát</small></div>
-    <div id="tree"></div>
-
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
@@ -24,77 +8,76 @@
                     const res = await fetch(url);
                     const text = await res.text();
                     const json = JSON.parse(text.substring(47, text.length - 2));
-                    
-                    // Lấy dữ liệu thô từ các hàng
+                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
                     return json.table.rows.map(row => {
-                        return row.c.map(cell => (cell && cell.v !== null) ? String(cell.v).trim() : null);
-                    });
+                        let item = {};
+                        row.c.forEach((cell, i) => { if (cols[i]) item[cols[i]] = (cell && cell.v !== null) ? String(cell.v).trim() : null; });
+                        return item;
+                    }).filter(r => r.id);
                 };
 
-                // Tải 2 sheet
-                const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
+                // Tải dữ liệu
+                const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
-                let nodes = [];
+                let nodesMap = {};
+                let partnerMap = {}; // Lưu quan hệ: ID_Chồng -> [ID_Vợ1, ID_Vợ2...]
 
-                // 1. Xử lý Sheet Data (Huyết thống)
-                // Giả định thứ tự cột: ID(0), FID(1), MID(2), FullName(3), Gender(4)...
-                dataRows.forEach(row => {
-                    if (row && row !== "id" && row !== "ID") {
-                        nodes.push({
-                            id: row,
-                            fid: (row && row !== "0") ? row : null,
-                            mid: (row && row !== "0") ? row : null,
-                            pids: [],
-                            name: row || "Thành viên",
-                            gender: (row && row.toLowerCase().includes('f')) ? "female" : "male"
-                        });
-                    }
-                });
+                // BƯỚC 1: Quét sheet dData để lấy danh sách Vợ/Chồng và tạo liên kết
+                dData.forEach(p => {
+                    if (p.id && p.pid) {
+                        // Lưu vào partnerMap để tí nữa gắn vào Chồng
+                        if (!partnerMap[p.pid]) partnerMap[p.pid] = [];
+                        partnerMap[p.pid].push(p.id);
 
-                // 2. Xử lý Sheet dData (Vợ/Chồng)
-                // Giả định thứ tự cột: ID(0), PID(1), FullName(2)...
-                dDataRows.forEach(row => {
-                    if (row && row && row !== "id") {
-                        // Thêm node vợ/chồng
-                        nodes.push({
-                            id: row,
-                            pids: [row],
-                            name: row || "Vợ/Chồng",
+                        // Tạo node cho Vợ
+                        nodesMap[p.id] = {
+                            id: p.id,
+                            pids: [p.pid], // Nối ngược về chồng
+                            name: p.full_name || "Vợ/Chồng",
                             gender: "female"
-                        });
-                        
-                        // Nối dây ngược lại cho chồng/vợ
-                        let partner = nodes.find(n => n.id == row);
-                        if (partner) {
-                            if (!partner.pids) partner.pids = [];
-                            partner.pids.push(row);
-                        }
+                        };
                     }
                 });
 
-                // 3. Giới hạn 185 người để tránh lỗi bản quyền Balkan
-                const finalNodes = nodes.slice(0, 185);
+                // BƯỚC 2: Quét sheet Data để lấy Huyết thống và gắn Vợ vào
+                data.forEach(m => {
+                    if (m.id) {
+                        nodesMap[m.id] = {
+                            id: m.id,
+                            fid: (m.fid && m.fid !== "0") ? m.fid : null,
+                            mid: (m.mid && m.mid !== "0") ? m.mid : null,
+                            pids: partnerMap[m.id] || [], // Lấy danh sách ID vợ từ dData đã quét ở Bước 1
+                            name: m.full_name || "Thành viên",
+                            gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
+                        };
+                    }
+                });
+
+                // BƯỚC 3: Chuyển đổi Map thành mảng và lách luật 200 node
+                // Ưu tiên nạp các đời đầu (ID nhỏ) để đảm bảo tính logic cha con
+                let allNodes = Object.values(nodesMap);
+                
+                // Sắp xếp theo ID để đảm bảo cha luôn được nạp trước hoặc cùng lúc với con
+                allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
+
+                const finalNodes = allNodes.slice(0, 190);
 
                 document.getElementById("loading").style.display = "none";
-
-                if (finalNodes.length === 0) {
-                    document.getElementById("loading").innerText = "Không tìm thấy dữ liệu. Hãy kiểm tra lại file Sheet!";
-                    return;
-                }
 
                 const family = new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    nodeBinding: { field_0: "name" },
+                    nodeBinding: {
+                        field_0: "name",
+                        field_1: "id"
+                    },
                     nodes: finalNodes
                 });
 
             } catch (e) {
                 console.error(e);
-                document.getElementById("loading").innerHTML = "<b>Lỗi nghiêm trọng:</b> " + e.message + "<br>Hãy nhấn F12 xem tab Console.";
+                document.getElementById("loading").innerText = "Lỗi logic: " + e.message;
             }
         }
         start();
     </script>
-</body>
-</html>
