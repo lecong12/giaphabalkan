@@ -2,7 +2,6 @@
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         
         async function start() {
-            const statusDiv = document.getElementById("status") || document.createElement("div");
             try {
                 const fetchSheet = async (gid) => {
                     const url = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&gid=${gid}`;
@@ -12,76 +11,75 @@
                     const endIdx = text.lastIndexOf('}');
                     const json = JSON.parse(text.substring(startIdx, endIdx + 1));
                     
-                    // Lấy tiêu đề cột và làm sạch để so khớp
-                    const cols = json.table.cols.map(c => (c.label || "").toLowerCase().trim());
-                    
+                    // Lấy dữ liệu theo vị trí cột (index) để không bị sai tên cột
                     return json.table.rows.map(row => {
-                        let obj = {};
-                        row.c.forEach((cell, i) => {
-                            if (cols[i]) {
-                                // Chuẩn hóa tên cột: bỏ dấu, bỏ cách để dễ so sánh
-                                let cleanCol = cols[i].normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s/g, "");
-                                obj[cleanCol] = (cell && cell.v !== null) ? String(cell.v).trim() : null;
-                            }
-                        });
-                        return obj;
-                    }).filter(item => item.id);
+                        return row.c.map(cell => (cell && cell.v !== null) ? String(cell.v).trim() : "");
+                    }).filter(r => r && r !== "id" && r !== "ID"); // Bỏ dòng tiêu đề và dòng trống
                 };
 
-                const [data, dData] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
+                // Tải dữ liệu từ 2 Sheet
+                const [dataRows, dDataRows] = await Promise.all([fetchSheet('0'), fetchSheet('1705210560')]);
                 
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // Hàm tìm tên trong object bất kể key là gì (full_name, hoten, name...)
-                const getName = (obj) => {
-                    return obj.fullname || obj.hoten || obj.name || obj.ten || obj.hovaten || "Thành viên";
-                };
+                // 1. Xử lý Phối ngẫu (Sheet dData)
+                // Giả định: Cột 0 là ID, Cột 1 là PID (ID chồng), Cột 2 hoặc 3 là Tên
+                dDataRows.forEach(r => {
+                    let id = r;
+                    let pid = r;
+                    let name = r || r || "Phối ngẫu";
+                    if (id && pid) {
+                        if (!partnerMap[pid]) partnerMap[pid] = [];
+                        partnerMap[pid].push(id);
 
-                // 1. Xử lý Phối ngẫu (dData)
-                dData.forEach(p => {
-                    if (p.id && p.pid) {
-                        if (!partnerMap[p.pid]) partnerMap[p.pid] = [];
-                        partnerMap[p.pid].push(p.id);
-
-                        nodesMap[p.id] = {
-                            id: p.id,
-                            pids: [p.pid],
-                            name: getName(p),
+                        nodesMap[id] = {
+                            id: id,
+                            pids: [pid],
+                            name: name,
                             gender: "female"
                         };
                     }
                 });
 
-                // 2. Xử lý Huyết thống (Data)
-                data.forEach(m => {
-                    if (m.id) {
-                        nodesMap[m.id] = {
-                            id: m.id,
-                            fid: (m.fid && m.fid !== "0") ? m.fid : null,
-                            mid: (m.mid && m.mid !== "0") ? m.mid : null,
-                            pids: partnerMap[m.id] || [], 
-                            name: getName(m),
-                            gender: (m.gender && m.gender.toLowerCase().includes('f')) ? "female" : "male"
+                // 2. Xử lý Huyết thống (Sheet Data)
+                // Giả định: Cột 0: ID, Cột 1: FID, Cột 2: MID, Cột 3: Tên
+                dataRows.forEach(r => {
+                    let id = r;
+                    if (id) {
+                        nodesMap[id] = {
+                            id: id,
+                            fid: (r && r !== "0") ? r : null,
+                            mid: (r && r !== "0") ? r : null,
+                            pids: partnerMap[id] || [], 
+                            name: r || r || "Thành viên",
+                            gender: (r && r.toLowerCase().includes('f')) ? "female" : "male"
                         };
                     }
                 });
 
                 let allNodes = Object.values(nodesMap);
+                // Sắp xếp để đời cụ Tổ hiện lên trước
                 allNodes.sort((a, b) => parseInt(a.id) - parseInt(b.id));
-                const finalNodes = allNodes.slice(0, 190);
+                
+                // LÁCH LUẬT 200 NODES: Chỉ lấy 180 người đầu tiên
+                const finalNodes = allNodes.slice(0, 180);
 
                 if(document.getElementById("status")) document.getElementById("status").style.display = "none";
 
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
                     template: "hugo",
-                    nodeBinding: { field_0: "name", field_1: "id" },
+                    nodeBinding: { 
+                        field_0: "name", 
+                        field_1: "id" 
+                    },
                     nodes: finalNodes
                 });
 
             } catch (e) {
-                console.error(e);
+                console.error("Lỗi:", e);
+                if(document.getElementById("status")) document.getElementById("status").innerText = "Lỗi: " + e.message;
             }
         }
         start();
