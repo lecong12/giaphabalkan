@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Gia Phả Lê Công - Bản Sửa Lỗi Chuỗi</title>
+    <title>Gia Phả Lê Công - Sửa Lỗi Định Dạng</title>
     <script src="https://balkan.app/js/familytree.js"></script>
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fdfdfd; }
@@ -11,26 +11,29 @@
     </style>
 </head>
 <body>
-    <div id="status">Đang chuẩn hóa dữ liệu...</div>
+    <div id="status">Đang chuẩn hóa ID và nạp sơ đồ...</div>
     <div id="tree"></div>
 
     <script>
         const ssId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
 
-        // HÀM SỬA LỖI: Kiểm tra str trước khi replace
+        // HÀM FIX LỖI: Ép kiểu String tuyệt đối trước khi dùng replace
         function getOnlyId(val) {
-            if (val === null || val === undefined) return null;
-            let str = String(val).split(','); // Lấy phần trước dấu phẩy
-            if (!str) return null;
-            let id = str.replace(/[^\d]/g, ''); // Chỉ lấy số
+            if (val === null || val === undefined || val === "") return null;
+            
+            // Ép về chuỗi và lấy phần trước dấu phẩy (nếu có)
+            let str = String(val).split(','); 
+            
+            // Loại bỏ tất cả ký tự không phải số
+            let id = str.replace(/[^\d]/g, ''); 
             return id || null;
         }
 
         function getOnlyName(val) {
-            if (!val) return "Thành viên";
+            if (val === null || val === undefined || val === "") return "Thành viên";
             let parts = String(val).split(',');
-            if (parts.length > 1) return parts.slice(1).join(',').trim(); // Lấy phần sau dấu phẩy
-            return String(val).trim();
+            // Nếu có dấu phẩy, lấy phần sau. Nếu không, lấy toàn bộ.
+            return parts.length > 1 ? parts.slice(1).join(',').trim() : String(val).trim();
         }
 
         async function start() {
@@ -47,7 +50,7 @@
                 let nodesMap = {};
                 let partnerMap = {}; 
 
-                // 1. Xử lý Vợ/Chồng (dData)
+                // 1. Xử lý Vợ/Chồng (dData) - Nạp trước để có PIDS
                 dDataRows.forEach((r, i) => {
                     if (i === 0 || !r) return;
                     let id = getOnlyId(r);
@@ -85,7 +88,7 @@
 
                 document.getElementById("status").style.display = "none";
 
-                // 3. Khởi tạo cây với sơ đồ phân cấp (Hierarchy)
+                // 3. Khởi tạo cây với phân cấp
                 [attachment_0](attachment)
                 new FamilyTree(document.getElementById("tree"), {
                     mouseScrol: FamilyTree.action.zoom,
@@ -100,6 +103,7 @@
 
             } catch (e) {
                 document.getElementById("status").innerText = "Lỗi: " + e.message;
+                console.error(e);
             }
         }
         start();
