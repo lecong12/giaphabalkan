@@ -65,6 +65,14 @@
             stroke: #777;
             stroke-width: 1.5px;
         }
+        .link.mother {
+            stroke: #e78ac3;
+            stroke-dasharray: 5 4;
+        }
+        .link.partner {
+            stroke: #56b4e9;
+            stroke-dasharray: 2 4;
+        }
         .person rect {
             stroke-width: 1.5px;
         }
@@ -113,12 +121,21 @@
     <script>
         const spreadsheetId = '1KgxSyIETIPPO7P_tBUcK7bRO4Ej4b863A-skdMHLMYM';
         const sheetGid = '0';
+        const dDataGid = '1565376107';
         const statusElement = document.getElementById('status');
         const noteElement = document.getElementById('data-note');
         const treeElement = document.getElementById('tree');
         const searchElement = document.getElementById('search-name');
         let renderedPeople = [];
         let chartState;
+
+        function normalizeHeader(value) {
+            return String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLocaleLowerCase('vi')
+                .replace(/[^a-z0-9]/g, '');
+        }
 
         function getCell(row, index) {
             const value = row && row.c && row.c[index] ? row.c[index].v : null;
@@ -133,10 +150,39 @@
             }
 
             const response = JSON.parse(text.slice(start, end + 1));
-            if (!response.table || !Array.isArray(response.table.rows)) {
+            if (!response.table || !Array.isArray(response.table.cols) || !Array.isArray(response.table.rows)) {
                 throw new Error('Không tìm thấy danh sách thành viên trong Google Sheets.');
             }
-            return response.table.rows;
+            return response.table;
+        }
+
+        function getColumnIndexes(columns) {
+            const aliases = {
+                id: ['id', 'personid', 'memberid', 'maid'],
+                full_name: ['fullname', 'name', 'hoten', 'hovaten', 'ten'],
+                gender: ['gender', 'sex', 'gioitinh'],
+                fid: ['fid', 'fatherid', 'idfather', 'mach', 'idcha'],
+                mid: ['mid', 'motherid', 'idmother', 'mame', 'idme'],
+                pid: ['pid', 'partnerid', 'spouseid', 'idpartner', 'idvochong'],
+                branch: ['branch', 'chinhanh', 'nhanh'],
+                generation: ['generation', 'thehe', 'doi']
+            };
+            const indexes = new Map();
+
+            columns.forEach((column, index) => {
+                const header = normalizeHeader(column.label || column.id);
+                for (const [field, names] of Object.entries(aliases)) {
+                    if (names.includes(header) && !indexes.has(field)) {
+                        indexes.set(field, index);
+                    }
+                }
+            });
+
+            const missing = ['id', 'full_name', 'gender'].filter(field => !indexes.has(field));
+            if (missing.length) {
+                throw new Error(`Google Sheets thiếu cột bắt buộc: ${missing.join(', ')}.`);
+            }
+            return indexes;
         }
 
         function toGender(value) {
@@ -146,9 +192,15 @@
             return 'unknown';
         }
 
-        function drawTree(people) {
+        function drawTree(people, mothers) {
             const peopleById = new Map(people.map(person => [person.id, { ...person, children: [] }]));
+            const mothersById = new Map(mothers.map(person => [
+                person.id,
+                { ...person, id: `dData:${person.id}`, sourceId: person.id, isMotherRecord: true, children: [] }
+            ]));
             const roots = [];
+            const motherEdges = [];
+            const partnerEdges = [];
             let fatherLinks = 0;
             let unmatchedFatherLinks = 0;
             let motherLinks = 0;
@@ -169,11 +221,20 @@
                 }
 
                 if (person.motherId) {
-                    if (peopleById.has(person.motherId) && person.motherId !== person.id) {
+                    const mother = mothersById.get(person.motherId);
+                    if (mother && mother.id !== person.id) {
                         motherLinks++;
+                        motherEdges.push([mother, person]);
                     } else {
                         unmatchedMotherLinks++;
                     }
+                }
+            }
+            for (const mother of mothersById.values()) {
+                roots.push(mother);
+                const partner = peopleById.get(mother.partnerId);
+                if (partner && partner.id !== mother.id) {
+                    partnerEdges.push([mother, partner]);
                 }
             }
 
@@ -186,7 +247,20 @@
             d3.tree().nodeSize([190, 100])(hierarchy);
 
             const visibleNodes = hierarchy.descendants().filter(node => node.data.id !== virtualRoot.id);
+            const hierarchyNodesById = new Map(visibleNodes.map(node => [node.data.id, node]));
             const visibleLinks = hierarchy.links().filter(link => link.source.data.id !== virtualRoot.id);
+            const visibleMotherLinks = motherEdges
+                .map(([mother, child]) => ({
+                    source: hierarchyNodesById.get(mother.id),
+                    target: hierarchyNodesById.get(child.id)
+                }))
+                .filter(link => link.source && link.target);
+            const visiblePartnerLinks = partnerEdges
+                .map(([mother, partner]) => ({
+                    source: hierarchyNodesById.get(mother.id),
+                    target: hierarchyNodesById.get(partner.id)
+                }))
+                .filter(link => link.source && link.target);
             const minX = d3.min(visibleNodes, node => node.x);
             const maxX = d3.max(visibleNodes, node => node.x);
             const minY = d3.min(visibleNodes, node => node.y);
@@ -213,6 +287,24 @@
                 .join('path')
                 .attr('class', 'link')
                 .attr('d', d3.linkVertical()
+                    .x(point => point.x)
+                    .y(point => point.y));
+
+            viewport.append('g')
+                .selectAll('path')
+                .data(visibleMotherLinks)
+                .join('path')
+                .attr('class', 'link mother')
+                .attr('d', d3.linkVertical()
+                    .x(point => point.x)
+                    .y(point => point.y));
+
+            viewport.append('g')
+                .selectAll('path')
+                .data(visiblePartnerLinks)
+                .join('path')
+                .attr('class', 'link partner')
+                .attr('d', d3.linkHorizontal()
                     .x(point => point.x)
                     .y(point => point.y));
 
@@ -248,15 +340,15 @@
             chartState = { svg, zoom, width, height, minX, minY, padding, visibleNodes };
             renderedPeople = visibleNodes.map(node => node.data);
 
-            statusElement.textContent = `Đã hiển thị ${people.length} thành viên; nối được ${fatherLinks} quan hệ cha và ${motherLinks} quan hệ mẹ. Kéo để di chuyển, cuộn để phóng to/thu nhỏ.`;
+            statusElement.textContent = `Đã hiển thị ${visibleNodes.length} thành viên; nối được ${fatherLinks} quan hệ cha, ${motherLinks} quan hệ mẹ và ${visiblePartnerLinks.length} quan hệ vợ/chồng. Kéo để di chuyển, cuộn để phóng to/thu nhỏ.`;
             statusElement.className = 'success';
 
             const notes = [];
-            if (unmatchedFatherLinks || unmatchedMotherLinks) {
-                notes.push(`${unmatchedFatherLinks} giá trị cha và ${unmatchedMotherLinks} giá trị mẹ không khớp ID thành viên nên chưa thể nối.`);
+            if (unmatchedFatherLinks || unmatchedMotherLinks || visiblePartnerLinks.length !== partnerEdges.length) {
+                notes.push(`${unmatchedFatherLinks} liên kết cha, ${unmatchedMotherLinks} liên kết mẹ và ${partnerEdges.length - visiblePartnerLinks.length} liên kết vợ/chồng không khớp ID.`);
             }
-            if (people.length !== visibleNodes.length) {
-                notes.push(`${people.length - visibleNodes.length} thành viên không thể đưa vào sơ đồ do quan hệ cha bị lỗi hoặc vòng lặp.`);
+            if (people.length + mothers.length !== visibleNodes.length) {
+                notes.push('Một số thành viên không thể đưa vào sơ đồ do quan hệ bị lỗi hoặc vòng lặp.');
             }
             noteElement.textContent = notes.join(' ');
         }
@@ -288,46 +380,66 @@
                     throw new Error('Không tải được thư viện vẽ sơ đồ. Hãy kiểm tra kết nối mạng.');
                 }
 
-                const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=${sheetGid}`;
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`Không thể tải Google Sheets (HTTP ${response.status}).`);
-                }
-
-                const rows = parseSheetResponse(await response.text());
-                const records = new Map();
-                let skippedRows = 0;
-                let duplicateIds = 0;
-
-                for (const row of rows) {
-                    const id = getCell(row, 0);
-                    const name = getCell(row, 1);
-                    if (!id || !name) {
-                        skippedRows++;
-                        continue;
+                const fetchTable = async gid => {
+                    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=${gid}`;
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`Không thể tải tab Google Sheets (gid=${gid}, HTTP ${response.status}).`);
                     }
-                    if (records.has(id)) {
-                        duplicateIds++;
-                        continue;
-                    }
-                    records.set(id, {
-                        id,
-                        name,
-                        gender: toGender(getCell(row, 2)),
-                        fatherId: getCell(row, 3),
-                        motherId: getCell(row, 4),
-                        branch: getCell(row, 8),
-                        generation: getCell(row, 9)
-                    });
-                }
+                    return parseSheetResponse(await response.text());
+                };
+                const [mainTable, motherTable] = await Promise.all([
+                    fetchTable(sheetGid),
+                    fetchTable(dDataGid)
+                ]);
+                const mainColumns = getColumnIndexes(mainTable.cols);
+                const motherColumns = getColumnIndexes(motherTable.cols);
 
-                if (records.size === 0) {
+                const readRecords = (table, columns, includeRelationships) => {
+                    const records = new Map();
+                    let skippedRows = 0;
+                    let duplicateIds = 0;
+                    for (const row of table.rows) {
+                        const readField = field => columns.has(field) ? getCell(row, columns.get(field)) : '';
+                        const id = readField('id');
+                        const name = readField('full_name');
+                        if (!id || !name) {
+                            skippedRows++;
+                            continue;
+                        }
+                        if (records.has(id)) {
+                            duplicateIds++;
+                            continue;
+                        }
+                        records.set(id, {
+                            id,
+                            name,
+                            gender: toGender(readField('gender')),
+                            fatherId: includeRelationships ? readField('fid') : '',
+                            motherId: includeRelationships ? readField('mid') : '',
+                            partnerId: includeRelationships ? '' : readField('pid'),
+                            branch: readField('branch'),
+                            generation: readField('generation')
+                        });
+                    }
+                    return { records, skippedRows, duplicateIds };
+                };
+
+                const mainData = readRecords(mainTable, mainColumns, true);
+                const motherData = readRecords(motherTable, motherColumns, false);
+                if (mainData.records.size === 0) {
                     throw new Error('Không có thành viên hợp lệ để hiển thị.');
                 }
 
-                drawTree([...records.values()]);
+                if (motherData.records.size === 0) {
+                    throw new Error('Tab dData không có thành viên hợp lệ để nối quan hệ mẹ.');
+                }
+
+                drawTree([...mainData.records.values()], [...motherData.records.values()]);
 
                 const extraNotes = [];
+                const skippedRows = mainData.skippedRows + motherData.skippedRows;
+                const duplicateIds = mainData.duplicateIds + motherData.duplicateIds;
                 if (skippedRows) extraNotes.push(`Bỏ qua ${skippedRows} dòng thiếu ID hoặc họ tên.`);
                 if (duplicateIds) extraNotes.push(`Bỏ qua ${duplicateIds} dòng có ID trùng.`);
                 if (extraNotes.length) {
