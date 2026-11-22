@@ -112,7 +112,9 @@
         <h1>Gia phả Balkan</h1>
         <input id="search-name" type="search" placeholder="Tìm theo họ tên..." aria-label="Tìm theo họ tên">
         <button id="search-button" type="button">Tìm người</button>
-        <button id="fit-button" type="button">Xem toàn cây</button>
+        <button id="zoom-in-button" type="button" aria-label="Phóng to">+</button>
+        <button id="zoom-out-button" type="button" aria-label="Thu nhỏ">−</button>
+        <button id="fit-button" type="button">Thu nhỏ xem toàn cây</button>
         <p id="status">Đang tải dữ liệu gia phả...</p>
         <p id="data-note"></p>
     </section>
@@ -278,7 +280,8 @@
                 .attr('role', 'img')
                 .attr('aria-label', 'Sơ đồ gia phả; kéo để di chuyển, cuộn để phóng to hoặc thu nhỏ');
 
-            const viewport = svg.append('g')
+            const zoomLayer = svg.append('g');
+            const viewport = zoomLayer.append('g')
                 .attr('transform', `translate(${padding - minX},${padding - minY})`);
 
             viewport.append('g')
@@ -331,13 +334,20 @@
                 .attr('class', 'detail')
                 .attr('y', 15)
                 .text(node => [node.data.branch, node.data.generation].filter(Boolean).join(' - '));
+            personNodes
+                .style('cursor', 'pointer')
+                .on('click', (event, node) => {
+                    focusNode(node);
+                    noteElement.textContent = `Đang xem: ${node.data.name}`;
+                });
 
             const zoom = d3.zoom()
-                .scaleExtent([0.03, 2.5])
-                .on('zoom', event => viewport.attr('transform', event.transform));
+                .scaleExtent([0.0001, 10000])
+                .on('zoom', event => zoomLayer.attr('transform', event.transform));
             svg.call(zoom);
 
-            chartState = { svg, zoom, width, height, minX, minY, padding, visibleNodes };
+            const fitScale = Math.min(treeElement.clientWidth / width, treeElement.clientHeight / height);
+            chartState = { svg, zoom, width, height, minX, minY, padding, visibleNodes, fitScale };
             renderedPeople = visibleNodes.map(node => node.data);
 
             statusElement.textContent = `Đã hiển thị ${visibleNodes.length} thành viên; nối được ${fatherLinks} quan hệ cha, ${motherLinks} quan hệ mẹ và ${visiblePartnerLinks.length} quan hệ vợ/chồng. Kéo để di chuyển, cuộn để phóng to/thu nhỏ.`;
@@ -351,6 +361,25 @@
                 notes.push('Một số thành viên không thể đưa vào sơ đồ do quan hệ bị lỗi hoặc vòng lặp.');
             }
             noteElement.textContent = notes.join(' ');
+
+            const firstAncestor = visibleNodes.find(node => !node.data.isMotherRecord && !node.data.fatherId)
+                || visibleNodes.find(node => !node.data.isMotherRecord);
+            if (firstAncestor) {
+                focusNode(firstAncestor, false);
+            }
+        }
+
+        function focusNode(node, animate = true) {
+            if (!node || !chartState) return;
+
+            const x = node.x - chartState.minX + chartState.padding;
+            const y = node.y - chartState.minY + chartState.padding;
+            const scale = 0.9 / chartState.fitScale;
+            const transform = d3.zoomIdentity
+                .translate(chartState.width / 2 - x * scale, chartState.height / 2 - y * scale)
+                .scale(scale);
+            const selection = animate ? chartState.svg.transition().duration(400) : chartState.svg;
+            selection.call(chartState.zoom.transform, transform);
         }
 
         function focusPerson() {
@@ -364,13 +393,7 @@
             }
 
             const node = chartState.visibleNodes.find(item => item.data.id === person.id);
-            const x = node.x - chartState.minX + chartState.padding;
-            const y = node.y - chartState.minY + chartState.padding;
-            const scale = 0.8;
-            const transform = d3.zoomIdentity
-                .translate(chartState.width / 2 - x * scale, chartState.height / 2 - y * scale)
-                .scale(scale);
-            chartState.svg.transition().duration(400).call(chartState.zoom.transform, transform);
+            focusNode(node);
             noteElement.textContent = `Đang xem: ${person.name}`;
         }
 
@@ -459,6 +482,12 @@
             if (chartState) {
                 chartState.svg.transition().duration(400).call(chartState.zoom.transform, d3.zoomIdentity);
             }
+        });
+        document.getElementById('zoom-in-button').addEventListener('click', () => {
+            if (chartState) chartState.svg.transition().duration(250).call(chartState.zoom.scaleBy, 1.5);
+        });
+        document.getElementById('zoom-out-button').addEventListener('click', () => {
+            if (chartState) chartState.svg.transition().duration(250).call(chartState.zoom.scaleBy, 1 / 1.5);
         });
 
         loadFamilyTree();
