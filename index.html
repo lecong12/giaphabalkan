@@ -288,7 +288,11 @@
             const visibleNodes = hierarchy.descendants()
                 .filter(node => node.data.id !== virtualRoot.id && node.depth <= 4);
             const hierarchyNodesById = new Map(visibleNodes.map(node => [node.data.id, node]));
-            const visibleLinks = hierarchy.links().filter(link => link.source.data.id !== virtualRoot.id);
+            const visibleLinks = hierarchy.links().filter(link =>
+                link.source.data.id !== virtualRoot.id
+                && hierarchyNodesById.has(link.source.data.id)
+                && hierarchyNodesById.has(link.target.data.id)
+            );
             const visibleMotherLinks = motherEdges
                 .map(([mother, child]) => ({
                     source: hierarchyNodesById.get(mother.id),
@@ -305,16 +309,17 @@
             const maxX = d3.max(visibleNodes, node => node.x);
             const minY = d3.min(visibleNodes, node => node.y);
             const maxY = d3.max(visibleNodes, node => node.y);
-            const padding = 60;
-            const nodeWidth = 164;
-            const nodeHeight = 54;
+            const padding = 70;
+            const nodeWidth = 190;
+            const nodeHeight = 68;
             const width = maxX - minX + nodeWidth + padding * 2;
             const height = maxY - minY + nodeHeight + padding * 2;
 
             treeElement.replaceChildren();
             const svg = d3.select(treeElement)
                 .append('svg')
-                .attr('viewBox', `0 0 ${width} ${height}`)
+                .attr('width', treeElement.clientWidth)
+                .attr('height', treeElement.clientHeight)
                 .attr('role', 'img')
                 .attr('aria-label', 'Sơ đồ gia phả; kéo để di chuyển, cuộn để phóng to hoặc thu nhỏ');
 
@@ -367,11 +372,13 @@
             personNodes.append('text')
                 .attr('class', 'name')
                 .attr('y', -3)
-                .text(node => node.data.name);
+                .text(node => node.data.name.length > 24
+                    ? `${node.data.name.slice(0, 22)}...`
+                    : node.data.name);
             personNodes.append('text')
                 .attr('class', 'detail')
                 .attr('y', 15)
-                .text(node => [node.data.branch, node.data.generation].filter(Boolean).join(' - '));
+                .text(node => [node.data.branch, node.data.generation].filter(Boolean).join(' - ').slice(0, 28));
             personNodes
                 .style('cursor', 'pointer')
                 .on('click', (event, node) => {
@@ -380,31 +387,54 @@
                 });
 
             const zoom = d3.zoom()
-                .scaleExtent([0.0001, 10000])
-                .on('zoom', event => zoomLayer.attr('transform', event.transform));
+                .scaleExtent([0.08, 8])
+                .on('zoom', event => {
+                    zoomLayer.attr('transform', event.transform);
+                    document.getElementById('zoom-level').textContent =
+                        `${Math.round(event.transform.k * 100)}%`;
+                });
             svg.call(zoom);
 
-            const fitScale = Math.min(treeElement.clientWidth / width, treeElement.clientHeight / height);
-            chartState = { svg, zoom, width, height, minX, minY, padding, visibleNodes, fitScale };
-            renderedPeople = visibleNodes.map(node => node.data);
+            const fitScale = Math.max(0.08, Math.min(
+                (treeElement.clientWidth - 40) / width,
+                (treeElement.clientHeight - 40) / height,
+                1
+            ));
+            chartState = {
+                svg, zoom, width, height, minX, minY, padding, visibleNodes, fitScale,
+                rootId: selectedRoot.id,
+                allPeople,
+                allMothers: mothers
+            };
+            renderedPeople = [...peopleById.values()];
 
-            statusElement.textContent = `Đã hiển thị ${visibleNodes.length} thành viên; nối được ${fatherLinks} quan hệ cha, ${motherLinks} quan hệ mẹ và ${visiblePartnerLinks.length} quan hệ vợ/chồng. Kéo để di chuyển, cuộn để phóng to/thu nhỏ.`;
+            statusElement.textContent = `Đang xem nhánh của ${selectedRoot.name}: ${visibleNodes.length} thành viên trong tối đa 4 thế hệ. Kéo để di chuyển, cuộn để phóng to/thu nhỏ.`;
             statusElement.className = 'success';
 
             const notes = [];
-            if (unmatchedFatherLinks || unmatchedMotherLinks || visiblePartnerLinks.length !== partnerEdges.length) {
-                notes.push(`${unmatchedFatherLinks} liên kết cha, ${unmatchedMotherLinks} liên kết mẹ và ${partnerEdges.length - visiblePartnerLinks.length} liên kết vợ/chồng không khớp ID.`);
-            }
-            if (people.length + mothers.length !== visibleNodes.length) {
-                notes.push('Một số thành viên không thể đưa vào sơ đồ do quan hệ bị lỗi hoặc vòng lặp.');
+            if (unmatchedFatherLinks) {
+                notes.push(`${unmatchedFatherLinks} liên kết cha không khớp ID.`);
             }
             noteElement.textContent = notes.join(' ');
 
-            const firstAncestor = visibleNodes.find(node => !node.data.isMotherRecord && !node.data.fatherId)
-                || visibleNodes.find(node => !node.data.isMotherRecord);
-            if (firstAncestor) {
-                focusNode(firstAncestor, false);
+            const selectedNode = visibleNodes.find(node => node.data.id === selectedRoot.id)
+                || visibleNodes[0];
+            if (selectedNode) {
+                focusNode(selectedNode, false);
             }
+        }
+
+        function fitToView(animate = true) {
+            if (!chartState) return;
+            const scale = chartState.fitScale;
+            const transform = d3.zoomIdentity
+                .translate(
+                    (treeElement.clientWidth - chartState.width * scale) / 2,
+                    (treeElement.clientHeight - chartState.height * scale) / 2
+                )
+                .scale(scale);
+            const selection = animate ? chartState.svg.transition().duration(400) : chartState.svg;
+            selection.call(chartState.zoom.transform, transform);
         }
 
         function focusNode(node, animate = true) {
@@ -412,9 +442,9 @@
 
             const x = node.x - chartState.minX + chartState.padding;
             const y = node.y - chartState.minY + chartState.padding;
-            const scale = 0.9 / chartState.fitScale;
+            const scale = Math.min(1.35, Math.max(chartState.fitScale * 3, 0.45));
             const transform = d3.zoomIdentity
-                .translate(chartState.width / 2 - x * scale, chartState.height / 2 - y * scale)
+                .translate(treeElement.clientWidth / 2 - x * scale, treeElement.clientHeight / 2 - y * scale)
                 .scale(scale);
             const selection = animate ? chartState.svg.transition().duration(400) : chartState.svg;
             selection.call(chartState.zoom.transform, transform);
@@ -431,7 +461,11 @@
             }
 
             const node = chartState.visibleNodes.find(item => item.data.id === person.id);
-            focusNode(node);
+            if (node) {
+                focusNode(node);
+            } else {
+                drawTree(chartState.allPeople, chartState.allMothers, person.id);
+            }
             noteElement.textContent = `Đang xem: ${person.name}`;
         }
 
@@ -517,9 +551,7 @@
             if (event.key === 'Enter') focusPerson();
         });
         document.getElementById('fit-button').addEventListener('click', () => {
-            if (chartState) {
-                chartState.svg.transition().duration(400).call(chartState.zoom.transform, d3.zoomIdentity);
-            }
+            fitToView(true);
         });
         document.getElementById('zoom-in-button').addEventListener('click', () => {
             if (chartState) chartState.svg.transition().duration(250).call(chartState.zoom.scaleBy, 1.5);
@@ -527,6 +559,18 @@
         document.getElementById('zoom-out-button').addEventListener('click', () => {
             if (chartState) chartState.svg.transition().duration(250).call(chartState.zoom.scaleBy, 1 / 1.5);
         });
+        function changeRoot(direction) {
+            if (!chartState) return;
+            const rootCandidates = chartState.allPeople
+                .filter(person => !person.fatherId)
+                .filter((person, index, list) => list.findIndex(item => item.id === person.id) === index);
+            if (!rootCandidates.length) return;
+            const currentIndex = rootCandidates.findIndex(person => person.id === chartState.rootId);
+            const index = (currentIndex + direction + rootCandidates.length) % rootCandidates.length;
+            drawTree(chartState.allPeople, chartState.allMothers, rootCandidates[index].id);
+        }
+        document.getElementById('previous-root-button').addEventListener('click', () => changeRoot(-1));
+        document.getElementById('next-root-button').addEventListener('click', () => changeRoot(1));
 
         loadFamilyTree();
     </script>
